@@ -210,6 +210,8 @@ pub mod range;
 pub mod byte;
 /// Module containing parsers specialized on character streams.
 pub mod char;
+/// Module containing stateful stream wrappers
+pub mod state;
 
 
 
