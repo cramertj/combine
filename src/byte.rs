@@ -4,8 +4,8 @@ use std::marker::PhantomData;
 
 use self::ascii::AsciiChar;
 
-use combinator::{satisfy, skip_many, token, tokens, Expected, Satisfy, SkipMany, Token, With};
-use primitives::{ConsumedResult, Info, Parser, Stream, StreamError};
+use combinator::{Expected, satisfy, Satisfy, skip_many, SkipMany, token, Token, tokens, With};
+use primitives::{ConsumedResult, Info, Parser, StreamError, Stream, TrackedError};
 
 /// Parses a character and succeeds if the character is equal to `c`.
 ///
@@ -181,7 +181,7 @@ where
             .parse_lazy(input)
             .map(|chars| chars.as_slice())
     }
-    fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
+    fn add_error(&mut self, errors: &mut TrackedError<StreamError<Self::Input>>) {
         tokens::<_, _, I>(|&l, r| l == r, Info::Range(self.0), self.0.iter()).add_error(errors)
     }
 }
@@ -230,7 +230,7 @@ where
         let cmp = &mut self.1;
         tokens(|&l, r| cmp(l, r), Info::Range(self.0), self.0).parse_lazy(input)
     }
-    fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
+    fn add_error(&mut self, errors: &mut TrackedError<StreamError<Self::Input>>) {
         let cmp = &mut self.1;
         tokens::<_, _, I>(|&l, r| cmp(l, r), Info::Range(self.0), self.0.iter()).add_error(errors)
     }
