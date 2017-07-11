@@ -425,11 +425,13 @@ impl<T> Consumed<T> {
     {
         use self::FastResult::*;
         match self {
-            Consumed::Consumed(x) => match f(x) {
-                EmptyOk((v, rest)) => ConsumedOk((v, rest)),
-                EmptyErr(err) => ConsumedErr(err),
-                y => y,
-            },
+            Consumed::Consumed(x) => {
+                match f(x) {
+                    EmptyOk((v, rest)) => ConsumedOk((v, rest)),
+                    EmptyErr(err) => ConsumedErr(err.error),
+                    y => y,
+                }
+            }
             Consumed::Empty(x) => f(x),
         }
     }
@@ -624,7 +626,7 @@ impl<T: fmt::Display, R: fmt::Display> fmt::Display for Error<T, R> {
 /// successful or not.
 /// `O` is the type that is output on success.
 /// `I` is the specific stream type used in the parser.
-pub type ParseResult<O, I> = Result<(O, Consumed<I>), Consumed<StreamError<I>>>;
+pub type ParseResult<O, I> = Result<(O, Consumed<I>), Consumed<TrackedError<StreamError<I>>>>;
 
 pub trait Positioned {
     /// Type which represents the position in a stream.
@@ -668,7 +670,7 @@ where
     let x = try!(
         input
             .uncons()
-            .map_err(|err| Consumed::Empty(ParseError::new(position, err)))
+            .map_err(|err| Consumed::Empty(ParseError::new(position, err).into()))
     );
     Ok((x, Consumed::Consumed(input)))
 }
@@ -704,12 +706,14 @@ where
     I::Range: Range,
 {
     match input.uncons_while(predicate) {
-        Err(err) => EmptyErr(ParseError::new(input.position(), err)),
-        Ok(x) => if x.len() == 0 {
-            EmptyOk((x, input))
-        } else {
-            ConsumedOk((x, input))
-        },
+        Err(err) => EmptyErr(ParseError::new(input.position(), err).into()),
+        Ok(x) => {
+            if x.len() == 0 {
+                EmptyOk((x, input))
+            } else {
+                ConsumedOk((x, input))
+            }
+        }
     }
 }
 
@@ -1062,12 +1066,29 @@ where
     ReadStream::new(read)
 }
 
+pub type ErrorOffset = u8;
+
+#[derive(Clone, PartialEq, Debug, Copy)]
+pub struct TrackedError<E> {
+    pub error: E,
+    pub offset: ErrorOffset,
+}
+
+impl<E> From<E> for TrackedError<E> {
+    fn from(error: E) -> Self {
+        TrackedError {
+            error: error,
+            offset: 0,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Debug, Copy)]
 pub enum FastResult<T, E> {
     ConsumedOk(T),
     EmptyOk(T),
     ConsumedErr(E),
-    EmptyErr(E),
+    EmptyErr(TrackedError<E>),
 }
 
 impl<T, E> FastResult<T, E> {
@@ -1076,7 +1097,10 @@ impl<T, E> FastResult<T, E> {
             ConsumedOk(ref t) => ConsumedOk(t),
             EmptyOk(ref t) => EmptyOk(t),
             ConsumedErr(ref e) => ConsumedErr(e),
-            EmptyErr(ref e) => EmptyErr(e),
+            EmptyErr(ref e) => EmptyErr(TrackedError {
+                error: &e.error,
+                offset: e.offset,
+            }),
         }
     }
 
@@ -1085,10 +1109,13 @@ impl<T, E> FastResult<T, E> {
         F: FnOnce(T) -> FastResult<T2, E>,
     {
         match self {
-            ConsumedOk(t) => match f(t) {
-                ConsumedOk(t2) | EmptyOk(t2) => ConsumedOk(t2),
-                EmptyErr(e) | ConsumedErr(e) => ConsumedErr(e),
-            },
+            ConsumedOk(t) => {
+                match f(t) {
+                    ConsumedOk(t2) | EmptyOk(t2) => ConsumedOk(t2),
+                    EmptyErr(e) => ConsumedErr(e.error),
+                    ConsumedErr(e) => ConsumedErr(e),
+                }
+            }
             EmptyOk(t) => f(t),
             ConsumedErr(e) => ConsumedErr(e),
             EmptyErr(e) => EmptyErr(e),
@@ -1119,12 +1146,12 @@ where
 /// `From::from(result)`
 pub type ConsumedResult<O, I> = FastResult<(O, I), StreamError<I>>;
 
-impl<T, E> Into<Result<Consumed<T>, Consumed<E>>> for FastResult<T, E> {
-    fn into(self) -> Result<Consumed<T>, Consumed<E>> {
+impl<T, E> Into<Result<Consumed<T>, Consumed<TrackedError<E>>>> for FastResult<T, E> {
+    fn into(self) -> Result<Consumed<T>, Consumed<TrackedError<E>>> {
         match self {
             ConsumedOk(t) => Ok(Consumed::Consumed(t)),
             EmptyOk(t) => Ok(Consumed::Empty(t)), 
-            ConsumedErr(e) => Err(Consumed::Consumed(e)),
+            ConsumedErr(e) => Err(Consumed::Consumed(e.into())),
             EmptyErr(e) => Err(Consumed::Empty(e)),
         }
     }
@@ -1139,7 +1166,7 @@ where
         match self {
             ConsumedOk((t, i)) => Ok((t, Consumed::Consumed(i))),
             EmptyOk((t, i)) => Ok((t, Consumed::Empty(i))), 
-            ConsumedErr(e) => Err(Consumed::Consumed(e)),
+            ConsumedErr(e) => Err(Consumed::Consumed(e.into())),
             EmptyErr(e) => Err(Consumed::Empty(e)),
         }
     }
@@ -1154,7 +1181,7 @@ where
         match result {
             Ok((t, Consumed::Consumed(i))) => ConsumedOk((t, i)),
             Ok((t, Consumed::Empty(i))) => EmptyOk((t, i)),
-            Err(Consumed::Consumed(e)) => ConsumedErr(e),
+            Err(Consumed::Consumed(e)) => ConsumedErr(e.error),
             Err(Consumed::Empty(e)) => EmptyErr(e),
         }
     }
@@ -1191,7 +1218,7 @@ pub trait Parser {
     ) -> Result<(Self::Output, Self::Input), StreamError<Self::Input>> {
         match self.parse_stream(input) {
             Ok((v, state)) => Ok((v, state.into_inner())),
-            Err(error) => Err(error.into_inner()),
+            Err(error) => Err(error.into_inner().error),
         }
     }
 
@@ -1225,7 +1252,7 @@ pub trait Parser {
         let mut result = self.parse_lazy(input.clone());
         if let FastResult::EmptyErr(ref mut error) = result {
             if let Ok(t) = input.uncons() {
-                error.add_error(Error::Unexpected(Info::Token(t)));
+                error.error.add_error(Error::Unexpected(Info::Token(t)));
             }
             self.add_error(error);
         }
@@ -1263,7 +1290,12 @@ pub trait Parser {
     /// See [`parse_lazy`] for details.
     ///
     /// [`parse_lazy`]: trait.Parser.html#method.parse_lazy
-    fn add_error(&mut self, _error: &mut StreamError<Self::Input>) {}
+    fn add_error(&mut self, _error: &mut TrackedError<StreamError<Self::Input>>) {}
+
+    /// Returns how many parsers this parser contains
+    fn parser_count(&self) -> ErrorOffset {
+        1
+    }
 
     /// Borrows a parser instead of consuming it.
     ///
@@ -1417,7 +1449,7 @@ pub trait Parser {
     ///         }
     ///         else {
     ///             let position = input.position();
-    ///             let err = ParseError::new(position, Error::Message("Not a nine".into()));
+    ///             let err = ParseError::new(position, Error::Message("Not a nine".into())).into();
     ///             Err((Consumed::Empty(err)))
     ///         }
     ///     }))
@@ -1637,7 +1669,7 @@ where
     }
 
     #[inline(always)]
-    fn add_error(&mut self, error: &mut StreamError<Self::Input>) {
+    fn add_error(&mut self, error: &mut TrackedError<StreamError<Self::Input>>) {
         (**self).add_error(error)
     }
 }
@@ -1665,7 +1697,7 @@ where
     }
 
     #[inline(always)]
-    fn add_error(&mut self, error: &mut StreamError<Self::Input>) {
+    fn add_error(&mut self, error: &mut TrackedError<StreamError<Self::Input>>) {
         (**self).add_error(error)
     }
 }
