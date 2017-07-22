@@ -23,6 +23,7 @@ path = "src/lib.rs"
 
 [dependencies]
 ascii = "0.7.0"
+frunk = "0.1.30"
 
 [dev-dependencies]
 byteorder = "0.5.3"

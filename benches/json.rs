@@ -119,7 +119,7 @@ where
             '"' => Err(Consumed::Empty(ParseError::from_errors(
                 input.into_inner().position(),
                 Vec::new(),
-            ))),
+            ).into())),
             _ => Ok((c, input)),
         }
     }
