@@ -32,7 +32,7 @@ enum MP4Box<'a> {
     Unknown,
 }
 
-fn parse_mp4(data: &[u8]) -> Result<(Vec<MP4Box>, &[u8]), ParseError<&[u8]>> {
+fn parse_mp4(data: &[u8]) -> Result<(Vec<MP4Box>, &[u8]), StreamError<&[u8]>> {
     let brand_name = || take(4).and_then(from_utf8);
     let filetype_box = (
         range(&b"ftyp"[..]),
@@ -67,7 +67,7 @@ static MP4_SMALL: &'static [u8] = include_bytes!("small.mp4");
 fn run_test(b: &mut Bencher, data: &[u8]) {
     b.iter(|| match parse_mp4(data) {
         Ok(x) => black_box(x),
-        Err(err) => panic!("{:?}", err),
+        Err(err) => panic!("{}", err.map_range(|bytes| format!("{:?}", bytes))),
     });
 }
 
