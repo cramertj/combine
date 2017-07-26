@@ -24,7 +24,6 @@ path = "src/lib.rs"
 [dependencies]
 ascii = "0.7.0"
 byteorder = "1.1.0"
-frunk = "0.1.30"
 
 [dev-dependencies]
 bencher = "0.1.3"
