@@ -3,12 +3,12 @@ use std::cell::UnsafeCell;
 use std::collections::VecDeque;
 use std::error::Error as StdError;
 use std::fmt;
-use std::io::{Read, Bytes};
+use std::io::{Bytes, Read};
 
 use self::FastResult::*;
 
-use combinator::{AndThen, and_then, Expected, expected, FlatMap, flat_map, Iter, Map, map,
-                 Message, message, Or, or, Skip, skip, Then, then, With, with};
+use combinator::{and_then, expected, flat_map, map, message, or, skip, then, with, AndThen,
+                 Expected, FlatMap, Iter, Map, Message, Or, Skip, Then, With};
 
 #[macro_export]
 macro_rules! ctry {
@@ -29,6 +29,38 @@ pub struct SourcePosition {
     pub line: i32,
     /// Current column of the input
     pub column: i32,
+}
+
+/// Newtype around a pointer offset into a slice stream (`&[T]`/`&str`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct PointerOffset(pub usize);
+
+impl fmt::Display for PointerOffset {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.0 as *const ())
+    }
+}
+
+impl PointerOffset {
+    /// Converts the pointer-based position into an indexed position.
+    ///
+    /// ```rust
+    /// # extern crate combine;
+    /// # use combine::*;
+    /// # fn main() {
+    /// let text = "b";
+    /// let err = token('a').parse(text).unwrap_err();
+    /// assert_eq!(err.position.0, text.as_ptr() as usize);
+    /// assert_eq!(err.map_position(|p| p.translate_position(text)).position, 0);
+    /// # }
+    /// ```
+    pub fn translate_position<T>(mut self, initial_string: &T) -> usize
+    where
+        T: ?Sized,
+    {
+        self.0 -= initial_string as *const T as *const () as usize;
+        self.0
+    }
 }
 
 /// Struct which represents a position in a byte stream.
@@ -394,13 +426,11 @@ impl<T> Consumed<T> {
         I: StreamOnce,
     {
         match self {
-            Consumed::Consumed(x) => {
-                match f(x) {
-                    Ok((v, Consumed::Empty(rest))) => Ok((v, Consumed::Consumed(rest))),
-                    Err(Consumed::Empty(err)) => Err(Consumed::Consumed(err)),
-                    y => y,
-                }
-            }
+            Consumed::Consumed(x) => match f(x) {
+                Ok((v, Consumed::Empty(rest))) => Ok((v, Consumed::Consumed(rest))),
+                Err(Consumed::Empty(err)) => Err(Consumed::Consumed(err)),
+                y => y,
+            },
             Consumed::Empty(x) => f(x),
         }
     }
@@ -411,13 +441,11 @@ impl<T> Consumed<T> {
     {
         use self::FastResult::*;
         match self {
-            Consumed::Consumed(x) => {
-                match f(x) {
-                    EmptyOk((v, rest)) => ConsumedOk((v, rest)),
-                    EmptyErr(err) => ConsumedErr(err),
-                    y => y,
-                }
-            }
+            Consumed::Consumed(x) => match f(x) {
+                EmptyOk((v, rest)) => ConsumedOk((v, rest)),
+                EmptyErr(err) => ConsumedErr(err),
+                y => y,
+            },
             Consumed::Empty(x) => f(x),
         }
     }
@@ -571,48 +599,6 @@ impl<P, I, R> ParseError<P, I, R> {
                 .map(|error| error.map_range(&mut f))
                 .collect(),
         )
-    }
-}
-
-impl<'s> StreamError<&'s str> {
-    /// Converts the pointer-based position into an indexed position.
-    ///
-    /// ```rust
-    /// # extern crate combine;
-    /// # use combine::*;
-    /// # fn main() {
-    /// let text = "b";
-    /// let err = token('a').parse(text).unwrap_err();
-    /// assert_eq!(err.position, text.as_ptr() as usize);
-    /// assert_eq!(err.translate_position(text).position, 0);
-    /// # }
-    /// ```
-    pub fn translate_position(mut self, initial_string: &'s str) -> StreamError<&'s str> {
-        self.position -= initial_string.as_ptr() as usize;
-        self
-    }
-}
-
-impl<'s, T: 's>
-    ParseError<<&'s [T] as StreamOnce>::Position, <&'s [T] as StreamOnce>::Item, &'s [T]>
-where
-    T: PartialEq + Clone,
-{
-    /// Converts the pointer-based position into an indexed position.
-    ///
-    /// ```rust
-    /// # extern crate combine;
-    /// # use combine::*;
-    /// # fn main() {
-    /// let text = b"b";
-    /// let err = token(b'a').parse(&text[..]).unwrap_err();
-    /// assert_eq!(err.position, text.as_ptr() as usize);
-    /// assert_eq!(err.translate_position(text).position, 0);
-    /// # }
-    /// ```
-    pub fn translate_position(mut self, initial_string: &'s [T]) -> Self {
-        self.position -= initial_string.as_ptr() as usize;
-        self
     }
 }
 
@@ -830,13 +816,11 @@ where
 {
     match input.uncons_while(predicate) {
         Err(err) => EmptyErr(ParseError::new(input.position(), err)),
-        Ok(x) => {
-            if x.len() == 0 {
-                EmptyOk((x, input))
-            } else {
-                ConsumedOk((x, input))
-            }
-        }
+        Ok(x) => if x.len() == 0 {
+            EmptyOk((x, input))
+        } else {
+            ConsumedOk((x, input))
+        },
     }
 }
 
@@ -941,7 +925,7 @@ where
 impl<'a> StreamOnce for &'a str {
     type Item = char;
     type Range = &'a str;
-    type Position = usize;
+    type Position = PointerOffset;
 
     #[inline]
     fn uncons(&mut self) -> Result<char, Error<char, &'a str>> {
@@ -957,7 +941,7 @@ impl<'a> StreamOnce for &'a str {
 
     #[inline(always)]
     fn position(&self) -> Self::Position {
-        self.as_bytes().as_ptr() as usize
+        PointerOffset(self.as_bytes().as_ptr() as usize)
     }
 }
 
@@ -967,7 +951,7 @@ where
 {
     type Item = T;
     type Range = &'a [T];
-    type Position = usize;
+    type Position = PointerOffset;
 
     #[inline]
     fn uncons(&mut self) -> Result<T, Error<T, &'a [T]>> {
@@ -982,7 +966,7 @@ where
 
     #[inline(always)]
     fn position(&self) -> Self::Position {
-        self.as_ptr() as usize
+        PointerOffset(self.as_ptr() as usize)
     }
 }
 
@@ -1002,7 +986,7 @@ where
 {
     type Item = &'a T;
     type Range = &'a [T];
-    type Position = usize;
+    type Position = PointerOffset;
 
     #[inline]
     fn uncons(&mut self) -> Result<&'a T, Error<&'a T, &'a [T]>> {
@@ -1017,7 +1001,7 @@ where
 
     #[inline(always)]
     fn position(&self) -> Self::Position {
-        self.0.as_ptr() as usize
+        PointerOffset(self.0.as_ptr() as usize)
     }
 }
 
@@ -1294,12 +1278,10 @@ impl<T, E> FastResult<T, E> {
         F: FnOnce(T) -> FastResult<T2, E>,
     {
         match self {
-            ConsumedOk(t) => {
-                match f(t) {
-                    ConsumedOk(t2) | EmptyOk(t2) => ConsumedOk(t2),
-                    EmptyErr(e) | ConsumedErr(e) => ConsumedErr(e),
-                }
-            }
+            ConsumedOk(t) => match f(t) {
+                ConsumedOk(t2) | EmptyOk(t2) => ConsumedOk(t2),
+                EmptyErr(e) | ConsumedErr(e) => ConsumedErr(e),
+            },
             EmptyOk(t) => f(t),
             ConsumedErr(e) => ConsumedErr(e),
             EmptyErr(e) => EmptyErr(e),
@@ -2073,8 +2055,7 @@ mod tests {
         let input = &[
             CloneOnly { s: "x".to_string() },
             CloneOnly { s: "y".to_string() },
-        ]
-            [..];
+        ][..];
         let result = ::range::take_while(|c: CloneOnly| c.s == "x".to_string()).parse(input);
         assert_eq!(
             result,

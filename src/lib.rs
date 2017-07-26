@@ -151,12 +151,11 @@
 //! [`RangeStream`]: primitives/trait.RangeStream.html
 //! [`Parser`]: primitives/trait.Parser.html
 //! [fn parser]: combinator/fn.parser.html
-
 // inline(always) is only used on trivial functions returning parsers
 #![cfg_attr(feature = "cargo-clippy", allow(inline_always))]
 
 #[doc(inline)]
-pub use primitives::{Parser, ParseError, StreamError, ConsumedResult, ParseResult, State, Stream,
+pub use primitives::{ConsumedResult, ParseError, ParseResult, Parser, State, Stream, StreamError,
                      StreamOnce};
 
 // import this one separately, so we can set the allow(deprecated) for just this item
@@ -166,10 +165,10 @@ pub use primitives::{Parser, ParseError, StreamError, ConsumedResult, ParseResul
 pub use primitives::from_iter;
 
 #[doc(inline)]
-pub use combinator::{any, between, chainl1, chainr1, choice, count, eof, env_parser, many, many1,
-                     none_of, one_of, optional, parser, position, satisfy, satisfy_map, sep_by,
-                     sep_by1, sep_end_by, sep_end_by1, skip_many, skip_many1, token, tokens, try,
-                     look_ahead, value, unexpected, not_followed_by};
+pub use combinator::{any, between, choice, count, env_parser, eof, look_ahead, many, none_of,
+                     not_followed_by, one_of, optional, parser, position, satisfy, satisfy_map,
+                     sep_by, sep_end_by, skip_many, token, tokens, try, unexpected, value,
+                     chainl1, chainr1, many1, sep_by1, sep_end_by1, skip_many1};
 
 macro_rules! static_fn {
     (($($arg: pat, $arg_ty: ty),*) -> $ret: ty { $body: expr }) => { {
@@ -217,7 +216,7 @@ pub mod char;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::primitives::{SourcePosition, Error, Consumed};
+    use super::primitives::{Consumed, Error, SourcePosition};
     use char::{alpha_num, char, digit, letter, spaces, string};
 
 
@@ -375,14 +374,12 @@ mod tests {
 
     fn follow(input: State<&str>) -> ParseResult<(), State<&str>> {
         match input.clone().uncons() {
-            Ok(c) => {
-                if c.is_alphanumeric() {
-                    let e = Error::Unexpected(c.into());
-                    Err(Consumed::Empty(ParseError::new(input.position(), e)))
-                } else {
-                    Ok(((), Consumed::Empty(input)))
-                }
-            }
+            Ok(c) => if c.is_alphanumeric() {
+                let e = Error::Unexpected(c.into());
+                Err(Consumed::Empty(ParseError::new(input.position(), e)))
+            } else {
+                Ok(((), Consumed::Empty(input)))
+            },
             Err(_) => Ok(((), Consumed::Empty(input))),
         }
     }
@@ -484,7 +481,7 @@ mod tests {
                 "error"
             }
         }
-        let result: Result<((), _), ParseError<usize, char, &str>> =
+        let result: Result<((), _), ParseError<_, char, &str>> =
             string("abc").and_then(|_| Err(Error)).parse("abc");
         assert!(result.is_err());
         // Test that ParseError can be coerced to a StdError
@@ -542,7 +539,7 @@ mod tests {
         let input = &[CloneOnly("x".to_string()), CloneOnly("y".to_string())][..];
         let result = token(CloneOnly("z".to_string()))
             .parse(input)
-            .map_err(|e| e.translate_position(input))
+            .map_err(|e| e.map_position(|p| p.translate_position(input)))
             .map_err(|e| {
                 ExtractedError(
                     e.position,

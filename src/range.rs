@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use primitives::{ConsumedResult, Error, Info, ParseError, StreamError, Parser, RangeStream};
+use primitives::{ConsumedResult, Error, Info, ParseError, Parser, RangeStream, StreamError};
 use primitives::FastResult::*;
 
 pub struct Range<I>(I::Range)
@@ -20,13 +20,11 @@ where
         use primitives::Range;
         let position = input.position();
         match input.uncons_range(self.0.len()) {
-            Ok(other) => {
-                if other == self.0 {
-                    ConsumedOk((other, input))
-                } else {
-                    EmptyErr(ParseError::empty(position))
-                }
-            }
+            Ok(other) => if other == self.0 {
+                ConsumedOk((other, input))
+            } else {
+                EmptyErr(ParseError::empty(position))
+            },
             Err(err) => EmptyErr(ParseError::new(position, err)),
         }
     }
