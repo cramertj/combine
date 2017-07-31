@@ -7,7 +7,8 @@ use std::io::Read;
 use std::fs::File;
 use std::path::Path;
 
-use pc::primitives::{BufferedStream, Consumed, IteratorStream, ParseError, ParseResult, Parser, State, Stream};
+use pc::primitives::{BufferedStream, Consumed, IteratorStream, ParseError, ParseResult, Parser, Stream};
+use pc::state::{State, SourcePosition};
 use pc::combinator::{any, between, choice, many, optional, parser, satisfy, sep_by, Expected,
                      FnParser, Skip, many1};
 use pc::char::{char, digit, spaces, string, Spaces};
@@ -236,9 +237,9 @@ fn bench_buffered_json(bencher: &mut ::test::Bencher) {
         .and_then(|mut file| file.read_to_string(&mut data))
         .unwrap();
     bencher.iter(|| {
-        let buffer = BufferedStream::new(IteratorStream::new(data.chars()), 1);
+        let buffer = BufferedStream::new(State::new(IteratorStream::new(data.chars())), 1);
         let mut parser = Json::value();
-        match parser.parse(State::new(buffer.as_stream())) {
+        match parser.parse(State::with_positioner(buffer.as_stream(), SourcePosition::default())) {
             Ok((Value::Array(v), _)) => {
                 ::test::black_box(v);
             }
