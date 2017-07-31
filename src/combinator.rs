@@ -1,6 +1,6 @@
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-use primitives::{Consumed, ConsumedResult, Error, Info, ParseError, ParseResult, Parser, Stream,
+use primitives::{Consumed, ConsumedResult, Error, Info, ParseError, ParseResult, Parser, Positioned, Stream,
                  StreamError, StreamOnce};
 use primitives::FastResult::*;
 
@@ -824,7 +824,7 @@ pub struct Iter<P: Parser> {
     state: State<P::Input>,
 }
 
-enum State<I: StreamOnce> {
+enum State<I: StreamOnce + Positioned> {
     Ok,
     EmptyErr,
     ConsumedErr(StreamError<I>),
