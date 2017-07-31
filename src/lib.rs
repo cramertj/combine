@@ -89,7 +89,7 @@
 //! extern crate combine;
 //! use combine::char::{char, letter, spaces};
 //! use combine::{between, many1, parser, sep_by, Parser};
-//! use combine::primitives::{State, Stream, ParseResult};
+//! use combine::primitives::{State, Stream, Positioned, ParseResult};
 //!
 //! #[derive(Debug, PartialEq)]
 //! enum Expr {
@@ -155,7 +155,7 @@
 #![cfg_attr(feature = "cargo-clippy", allow(inline_always))]
 
 #[doc(inline)]
-pub use primitives::{ConsumedResult, ParseError, ParseResult, Parser, State, Stream, StreamError,
+pub use primitives::{ConsumedResult, ParseError, ParseResult, Parser, Positioned, State, Stream, StreamError,
                      StreamOnce};
 
 // import this one separately, so we can set the allow(deprecated) for just this item

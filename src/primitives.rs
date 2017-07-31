@@ -423,7 +423,7 @@ impl<T> Consumed<T> {
     pub fn combine<F, U, I>(self, f: F) -> ParseResult<U, I>
     where
         F: FnOnce(T) -> ParseResult<U, I>,
-        I: StreamOnce,
+        I: StreamOnce + Positioned,
     {
         match self {
             Consumed::Consumed(x) => match f(x) {
@@ -437,7 +437,7 @@ impl<T> Consumed<T> {
     pub fn combine_consumed<F, U, I>(self, f: F) -> ConsumedResult<U, I>
     where
         F: FnOnce(T) -> ConsumedResult<U, I>,
-        I: StreamOnce,
+        I: StreamOnce + Positioned,
     {
         use self::FastResult::*;
         match self {
@@ -453,7 +453,7 @@ impl<T> Consumed<T> {
 
 /// Alias over `ParseError` for `StreamOnce` types
 pub type StreamError<S> = ParseError<
-    <S as StreamOnce>::Position,
+    <S as Positioned>::Position,
     <S as StreamOnce>::Item,
     <S as StreamOnce>::Range,
 >;
@@ -646,7 +646,7 @@ impl<T: fmt::Display, R: fmt::Display> fmt::Display for Error<T, R> {
 #[derive(Clone, PartialEq)]
 pub struct State<I>
 where
-    I: Stream,
+    I: StreamOnce,
     I::Item: Positioner,
 {
     /// The current position
@@ -673,7 +673,7 @@ where
 
 impl<I> State<I>
 where
-    I: Stream,
+    I: StreamOnce,
     I::Item: Positioner,
 {
     /// Creates a new `State<I>` from an input stream. Initializes the position to
@@ -686,14 +686,22 @@ where
     }
 }
 
+impl<I> Positioned for State<I> where I: Stream, I::Item: Positioner {
+    type Position = <I::Item as Positioner>::Position;
+
+    #[inline(always)]
+    fn position(&self) -> Self::Position {
+        self.position.clone()
+    }
+}
+
 impl<I> StreamOnce for State<I>
 where
-    I: Stream,
-    I::Item: Positioner,
+    I: StreamOnce,
+    I::Item: Positioner
 {
     type Item = I::Item;
     type Range = I::Range;
-    type Position = <I::Item as Positioner>::Position;
 
     #[inline]
     fn uncons(&mut self) -> Result<I::Item, Error<I::Item, I::Range>> {
@@ -704,11 +712,6 @@ where
             }
             Err(err) => Err(err),
         }
-    }
-
-    #[inline(always)]
-    fn position(&self) -> Self::Position {
-        self.position.clone()
     }
 }
 
@@ -753,6 +756,15 @@ where
 /// `I` is the specific stream type used in the parser.
 pub type ParseResult<O, I> = Result<(O, Consumed<I>), Consumed<StreamError<I>>>;
 
+pub trait Positioned {
+    /// Type which represents the position in a stream.
+    /// `Ord` is required to allow parsers to determine which of two positions are further ahead.
+    type Position: Clone + Ord;
+
+    /// Returns the current position of the stream.
+    fn position(&self) -> Self::Position;
+}
+
 /// `StreamOnce` represents a sequence of items that can be extracted one by one.
 pub trait StreamOnce {
     /// The type of items which is yielded from this stream.
@@ -763,24 +775,17 @@ pub trait StreamOnce {
     /// `Self::Item` for this type.
     type Range: Clone + PartialEq;
 
-    /// Type which represents the position in a stream.
-    /// `Ord` is required to allow parsers to determine which of two positions are further ahead.
-    type Position: Ord;
-
     /// Takes a stream and removes its first item, yielding the item and the rest of the elements.
     /// Returns `Err` if no element could be retrieved.
     fn uncons(&mut self) -> Result<Self::Item, Error<Self::Item, Self::Range>>;
-
-    /// Returns the current position of the stream.
-    fn position(&self) -> Self::Position;
 }
 
 /// A stream of tokens which can be duplicated
-pub trait Stream: StreamOnce + Clone {}
+pub trait Stream: StreamOnce + Positioned + Clone {}
 
 impl<I> Stream for I
 where
-    I: StreamOnce + Clone,
+    I: StreamOnce + Positioned + Clone,
 {
 }
 
@@ -947,10 +952,18 @@ where
     }
 }
 
+impl<'a> Positioned for &'a str {
+    type Position = PointerOffset;
+
+    #[inline(always)]
+    fn position(&self) -> Self::Position {
+        self.as_bytes().position()
+    }
+}
+
 impl<'a> StreamOnce for &'a str {
     type Item = char;
     type Range = &'a str;
-    type Position = PointerOffset;
 
     #[inline]
     fn uncons(&mut self) -> Result<char, Error<char, &'a str>> {
@@ -963,10 +976,14 @@ impl<'a> StreamOnce for &'a str {
             None => Err(Error::end_of_input()),
         }
     }
+}
+
+impl<'a, T> Positioned for &'a [T] {
+    type Position = PointerOffset;
 
     #[inline(always)]
     fn position(&self) -> Self::Position {
-        PointerOffset(self.as_bytes().as_ptr() as usize)
+        PointerOffset(self.as_ptr() as usize)
     }
 }
 
@@ -976,7 +993,6 @@ where
 {
     type Item = T;
     type Range = &'a [T];
-    type Position = PointerOffset;
 
     #[inline]
     fn uncons(&mut self) -> Result<T, Error<T, &'a [T]>> {
@@ -987,11 +1003,6 @@ where
             }
             None => Err(Error::end_of_input()),
         }
-    }
-
-    #[inline(always)]
-    fn position(&self) -> Self::Position {
-        PointerOffset(self.as_ptr() as usize)
     }
 }
 
@@ -1005,13 +1016,21 @@ impl<'a, T> Clone for SliceStream<'a, T> {
     }
 }
 
+impl<'a, T> Positioned for SliceStream<'a, T> {
+    type Position = PointerOffset;
+
+    #[inline(always)]
+    fn position(&self) -> Self::Position {
+        self.0.position()
+    }
+}
+
 impl<'a, T> StreamOnce for SliceStream<'a, T>
 where
     T: Clone + PartialEq + 'a,
 {
     type Item = &'a T;
     type Range = &'a [T];
-    type Position = PointerOffset;
 
     #[inline]
     fn uncons(&mut self) -> Result<&'a T, Error<&'a T, &'a [T]>> {
@@ -1022,11 +1041,6 @@ where
             }
             None => Err(Error::end_of_input()),
         }
-    }
-
-    #[inline(always)]
-    fn position(&self) -> Self::Position {
-        PointerOffset(self.0.as_ptr() as usize)
     }
 }
 
@@ -1067,9 +1081,7 @@ where
 ///
 /// [`from_iter`]: fn.from_iter.html
 #[derive(Clone, Debug)]
-pub struct IteratorStream<I>(I, usize)
-where
-    I: Iterator;
+pub struct IteratorStream<I>(I, usize);
 
 
 impl<I> IteratorStream<I>
@@ -1106,13 +1118,21 @@ where
     }
 }
 
+impl<I> Positioned for IteratorStream<I> {
+    type Position = usize;
+
+    #[inline(always)]
+    fn position(&self) -> Self::Position {
+        self.1
+    }
+}
+
 impl<I: Iterator> StreamOnce for IteratorStream<I>
 where
     I::Item: Clone + PartialEq,
 {
     type Item = I::Item;
     type Range = I::Item;
-    type Position = usize;
 
     #[inline]
     fn uncons(&mut self) -> Result<I::Item, Error<I::Item, I::Item>> {
@@ -1121,11 +1141,6 @@ where
             None => Err(Error::end_of_input()),
         }
     }
-
-    #[inline(always)]
-    fn position(&self) -> Self::Position {
-        self.1
-    }
 }
 
 pub struct ReadStream<R> {
@@ -1133,10 +1148,18 @@ pub struct ReadStream<R> {
     offset: usize,
 }
 
+impl<R> Positioned for ReadStream<R> {
+    type Position = usize;
+
+    #[inline(always)]
+    fn position(&self) -> Self::Position {
+        self.offset
+    }
+}
+
 impl<R: Read> StreamOnce for ReadStream<R> {
     type Item = u8;
     type Range = u8;
-    type Position = usize;
 
     #[inline]
     fn uncons(&mut self) -> Result<u8, Error<u8, u8>> {
@@ -1148,11 +1171,6 @@ impl<R: Read> StreamOnce for ReadStream<R> {
             Some(Err(err)) => Err(err.into()),
             None => Err(Error::end_of_input()),
         }
-    }
-
-    #[inline(always)]
-    fn position(&self) -> Self::Position {
-        self.offset
     }
 }
 
@@ -1321,7 +1339,7 @@ impl<T, E> FastResult<T, E> {
 
 impl<T, E> ConsumedResult<T, E>
 where
-    E: StreamOnce,
+    E: StreamOnce + Positioned,
 {
     pub fn map<F, T2>(self, f: F) -> ConsumedResult<F::Output, E>
     where
@@ -1355,7 +1373,7 @@ impl<T, E> Into<Result<Consumed<T>, Consumed<E>>> for FastResult<T, E> {
 
 impl<O, I> Into<ParseResult<O, I>> for ConsumedResult<O, I>
 where
-    I: StreamOnce,
+    I: StreamOnce + Positioned,
 {
     fn into(self) -> ParseResult<O, I> {
         use self::FastResult::*;
@@ -1370,7 +1388,7 @@ where
 
 impl<O, I> From<ParseResult<O, I>> for ConsumedResult<O, I>
 where
-    I: StreamOnce,
+    I: StreamOnce + Positioned,
 {
     fn from(result: ParseResult<O, I>) -> ConsumedResult<O, I> {
         use self::FastResult::*;
@@ -1894,7 +1912,7 @@ where
 /// A `BufferedStream` wraps an instance `StreamOnce`, allowing it to be used as a `Stream`.
 pub struct BufferedStream<'a, I>
 where
-    I: StreamOnce + 'a,
+    I: StreamOnce + Positioned + 'a,
     I::Item: 'a,
 {
     offset: usize,
@@ -1903,7 +1921,7 @@ where
 
 impl<'a, I> fmt::Debug for BufferedStream<'a, I>
 where
-    I: StreamOnce + 'a,
+    I: StreamOnce + Positioned + 'a,
     I::Item: 'a,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1919,7 +1937,7 @@ where
 
 impl<'a, I> Clone for BufferedStream<'a, I>
 where
-    I: StreamOnce + 'a,
+    I: StreamOnce + Positioned + 'a,
     I::Position: Clone,
     I::Item: 'a,
 {
@@ -1933,14 +1951,14 @@ where
 
 pub struct SharedBufferedStream<I>
 where
-    I: StreamOnce,
+    I: StreamOnce + Positioned,
 {
     buffer: UnsafeCell<BufferedStreamInner<I>>,
 }
 
 struct BufferedStreamInner<I>
 where
-    I: StreamOnce,
+    I: StreamOnce + Positioned,
 {
     offset: usize,
     iter: I,
@@ -1949,7 +1967,7 @@ where
 
 impl<I> BufferedStreamInner<I>
 where
-    I: StreamOnce,
+    I: StreamOnce + Positioned,
     I::Position: Clone,
     I::Item: Clone,
 {
@@ -1998,7 +2016,7 @@ where
 
 impl<I> SharedBufferedStream<I>
 where
-    I: StreamOnce,
+    I: StreamOnce + Positioned,
     I::Position: Clone,
     I::Item: Clone,
 {
@@ -2020,7 +2038,7 @@ where
 
 impl<'a, I> BufferedStream<'a, I>
 where
-    I: StreamOnce,
+    I: StreamOnce + Positioned,
 {
     /// Constructs a new `BufferedStream` froma a `StreamOnce` instance with a `lookahead` number
     /// of elements stored in the buffer.
@@ -2038,26 +2056,29 @@ where
     }
 }
 
+impl<'a, I> Positioned for BufferedStream<'a, I> where I: StreamOnce + Positioned {
+
+    type Position = I::Position;
+
+    #[inline(always)]
+    fn position(&self) -> Self::Position {
+        self.buffer.position(self.offset)
+    }
+}
+
 impl<'a, I> StreamOnce for BufferedStream<'a, I>
 where
-    I: StreamOnce + 'a,
-    I::Position: Clone,
+    I: StreamOnce + Positioned + 'a,
     I::Item: Clone + PartialEq + 'a,
 {
     type Item = I::Item;
     type Range = I::Range;
-    type Position = I::Position;
 
     #[inline]
     fn uncons(&mut self) -> Result<I::Item, Error<I::Item, I::Range>> {
         let value = try!(self.buffer.uncons(self.offset));
         self.offset += 1;
         Ok(value)
-    }
-
-    #[inline(always)]
-    fn position(&self) -> Self::Position {
-        self.buffer.position(self.offset)
     }
 }
 
