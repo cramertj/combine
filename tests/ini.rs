@@ -5,7 +5,8 @@ use std::collections::HashMap;
 
 use combine::*;
 use combine::char::space;
-use combine::primitives::{Error, SourcePosition};
+use combine::primitives::Error;
+use combine::state::SourcePosition;
 
 #[derive(PartialEq, Debug)]
 pub struct Ini {
