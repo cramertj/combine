@@ -1,4 +1,4 @@
-use primitives::{ConsumedResult, ParsingError, Parser, Stream, StreamError};
+use primitives::{ConsumedResult, Parser, ParsingError, Stream, StreamError};
 use combinator::{satisfy, skip_many, token, tokens, Expected, Satisfy, SkipMany, Token, With};
 use std::marker::PhantomData;
 
@@ -18,7 +18,8 @@ use std::marker::PhantomData;
 #[inline(always)]
 pub fn char<I>(c: char) -> Token<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     token(c)
 }
@@ -29,7 +30,8 @@ impl_token_parser! { Digit(), char, Expected<Satisfy<I, fn (char) -> bool>> }
 #[inline(always)]
 pub fn digit<I>() -> Digit<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     Digit(
         satisfy(static_fn!((c, char) -> bool { c.is_digit(10) })).expected("digit"),
@@ -47,7 +49,8 @@ impl_token_parser! { Space(), char, Expected<Satisfy<I, fn (char) -> bool>> }
 #[inline(always)]
 pub fn space<I>() -> Space<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     let f: fn(char) -> bool = char::is_whitespace;
     Space(satisfy(f).expected("whitespace"), PhantomData)
@@ -63,7 +66,8 @@ impl_token_parser! { Spaces(), char, Expected<SkipMany<Space<I>>> }
 #[inline(always)]
 pub fn spaces<I>() -> Spaces<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     Spaces(skip_many(space()).expected("whitespaces"), PhantomData)
 }
@@ -74,7 +78,8 @@ impl_token_parser! { Newline(), char, Expected<Satisfy<I, fn (char) -> bool>> }
 #[inline(always)]
 pub fn newline<I>() -> Newline<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     Newline(
         satisfy(static_fn!((ch, char) -> bool { ch == '\n' })).expected("lf newline"),
@@ -88,7 +93,8 @@ impl_token_parser! { CrLf(), char, Expected<With<Satisfy<I, fn (char) -> bool>, 
 #[inline(always)]
 pub fn crlf<I>() -> CrLf<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     CrLf(
         satisfy(static_fn!((ch, char) -> bool { ch == '\r' }))
@@ -104,7 +110,8 @@ impl_token_parser! { Tab(), char, Expected<Satisfy<I, fn (char) -> bool>> }
 #[inline(always)]
 pub fn tab<I>() -> Tab<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     Tab(
         satisfy(static_fn!((ch, char) -> bool { ch == '\t' })).expected("tab"),
@@ -120,7 +127,8 @@ impl_token_parser! { Upper(), char, Expected<Satisfy<I, fn (char) -> bool>> }
 #[inline(always)]
 pub fn upper<I>() -> Upper<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     Upper(
         satisfy(static_fn!((ch, char) -> bool { ch.is_uppercase()})).expected("uppercase letter"),
@@ -136,7 +144,8 @@ impl_token_parser! { Lower(), char, Expected<Satisfy<I, fn (char) -> bool>> }
 #[inline(always)]
 pub fn lower<I>() -> Lower<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     Lower(
         satisfy(static_fn!((ch, char) -> bool { ch.is_lowercase() })).expected("lowercase letter"),
@@ -152,7 +161,8 @@ impl_token_parser! { AlphaNum(), char, Expected<Satisfy<I, fn (char) -> bool>> }
 #[inline(always)]
 pub fn alpha_num<I>() -> AlphaNum<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     AlphaNum(
         satisfy(static_fn!((ch, char) -> bool { ch.is_alphanumeric() }))
@@ -169,7 +179,8 @@ impl_token_parser! { Letter(), char, Expected<Satisfy<I, fn (char) -> bool>> }
 #[inline(always)]
 pub fn letter<I>() -> Letter<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     Letter(
         satisfy(static_fn!((ch, char) -> bool { ch.is_alphabetic() })).expected("letter"),
@@ -183,7 +194,8 @@ impl_token_parser! { OctDigit(), char, Expected<Satisfy<I, fn (char) -> bool>> }
 #[inline(always)]
 pub fn oct_digit<I>() -> OctDigit<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     OctDigit(
         satisfy(static_fn!((ch, char) -> bool { ch.is_digit(8) })).expected("octal digit"),
@@ -197,7 +209,8 @@ impl_token_parser! { HexDigit(), char, Expected<Satisfy<I, fn (char) -> bool>> }
 #[inline(always)]
 pub fn hex_digit<I>() -> HexDigit<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     HexDigit(
         satisfy(static_fn!((ch, char) -> bool { ch.is_digit(0x10) })).expected("hexadecimal digit"),
@@ -212,10 +225,12 @@ fn eq(l: char, r: char) -> bool {
 #[derive(Clone)]
 pub struct Str<I>(&'static str, PhantomData<fn(I) -> I>)
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>;
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>;
 impl<I> Parser for Str<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     type Input = I;
     type Output = &'static str;
@@ -246,7 +261,8 @@ where
 #[inline(always)]
 pub fn string<I>(s: &'static str) -> Str<I>
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     Str(s, PhantomData)
 }
@@ -254,11 +270,13 @@ where
 #[derive(Clone)]
 pub struct StrCmp<C, I>(&'static str, C, PhantomData<fn(I) -> I>)
 where
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>;
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>;
 impl<C, I> Parser for StrCmp<C, I>
 where
     C: FnMut(char, char) -> bool,
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     type Input = I;
     type Output = &'static str;
@@ -291,7 +309,8 @@ where
 pub fn string_cmp<C, I>(s: &'static str, cmp: C) -> StrCmp<C, I>
 where
     C: FnMut(char, char) -> bool,
-    I: Stream<Item = char>, I::Error: ParsingError<char, I::Range>
+    I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     StrCmp(s, cmp, PhantomData)
 }

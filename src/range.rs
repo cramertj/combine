@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use primitives::{ConsumedResult, Error, Info, ParseError, Parser, RangeStream, StreamError,
+use primitives::{ConsumedResult, Error, Info, Parser, ParsingError, RangeStream, StreamError,
                  StreamOnce};
 use primitives::FastResult::*;
 
@@ -24,9 +24,9 @@ where
             Ok(other) => if other == self.0 {
                 ConsumedOk((other, input))
             } else {
-                EmptyErr(ParseError::empty(position))
+                EmptyErr(I::Error::empty(position))
             },
-            Err(err) => EmptyErr(ParseError::new(position, err)),
+            Err(err) => EmptyErr(err),
         }
     }
     fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
@@ -117,7 +117,7 @@ where
         let position = input.position();
         match input.uncons_range(self.0) {
             Ok(x) => ConsumedOk((x, input)),
-            Err(err) => EmptyErr(ParseError::new(position, err)),
+            Err(err) => EmptyErr(err),
         }
     }
 }
@@ -203,7 +203,7 @@ where
             ConsumedOk((v, input)) => ConsumedOk((v, input)),
             EmptyOk((_, input)) => {
                 let position = input.position();
-                EmptyErr(ParseError::empty(position))
+                EmptyErr(I::Error::empty(position))
             }
             EmptyErr(err) => EmptyErr(err),
             ConsumedErr(err) => ConsumedErr(err),
@@ -276,7 +276,7 @@ where
                         }
                     }
                 }
-                Err(e) => return EmptyErr(ParseError::new(look_ahead_input.position(), e)),
+                Err(e) => return EmptyErr(e),
             };
         }
     }

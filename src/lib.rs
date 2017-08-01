@@ -156,8 +156,8 @@
 #![cfg_attr(feature = "cargo-clippy", allow(inline_always))]
 
 #[doc(inline)]
-pub use primitives::{ConsumedResult, ParseError, ParseResult, Parser, Positioned, Stream,
-                     StreamError, StreamOnce};
+pub use primitives::{ConsumedResult, ParseError, ParseResult, Parser, ParsingError, Positioned,
+                     Stream, StreamError, StreamOnce};
 
 #[doc(inline)]
 pub use state::State;
@@ -186,11 +186,11 @@ macro_rules! impl_token_parser {
     #[derive(Clone)]
     pub struct $name<I $(,$ty_var)*>($inner_type, PhantomData<fn (I) -> I>)
         where I: Stream<Item=$ty>,
-              I::Error: ParsingError<$ty, I::Range>
+              I::Error: ParsingError<$ty, I::Range, I::Position>
               $(, $ty_var : Parser<Input=I>)*;
     impl <I $(,$ty_var)*> Parser for $name<I $(,$ty_var)*>
         where I: Stream<Item=$ty>,
-              I::Error: ParsingError<$ty, I::Range>
+              I::Error: ParsingError<$ty, I::Range, I::Position>
               $(, $ty_var : Parser<Input=I>)*
     {
         type Input = I;
@@ -235,7 +235,7 @@ mod tests {
 
     fn integer<'a, I>(input: I) -> ParseResult<i64, I>
     where
-        I: Stream<Item = char>,
+        I: Stream<Item = char>, I::Error: ParsingError<I::Item, I::Range, I::Position>,
     {
         let (s, input) = try!(
             many1::<String, _>(digit())
@@ -304,7 +304,7 @@ mod tests {
     #[allow(unconditional_recursion)]
     fn expr<I>(input: I) -> ParseResult<Expr, I>
     where
-        I: Stream<Item = char>,
+        I: Stream<Item = char>, I::Error: ParsingError<I::Item, I::Range, I::Position>,
     {
         let word = many1(letter()).expected("identifier");
         let integer = parser(integer);
@@ -356,7 +356,7 @@ mod tests {
     fn term<I>(input: I) -> ParseResult<Expr, I>
     where
         I: Stream<Item = char>,
-              I::Error: ParsingError<I::Item, I::Range>
+        I::Error: ParsingError<I::Item, I::Range, I::Position>,
     {
         fn times(l: Expr, r: Expr) -> Expr {
             Expr::Times(Box::new(l), Box::new(r))

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use primitives::{Error, IteratorStream, Positioned, RangeStream, ReadStream, SliceStream,
+use primitives::{Error, IteratorStream, ParsingError, Positioned, RangeStream, ReadStream, SliceStream,
                  StreamOnce};
 
 /// Trait for tracking the current position of a `Stream`.
@@ -103,9 +103,8 @@ impl<I, X> Positioned for State<I, X>
 where
     I: StreamOnce,
     X: Positioner<I::Item>,
+    I::Error: ParsingError<I::Item, I::Range, X::Position>,
 {
-    type Position = X::Position;
-
     #[inline(always)]
     fn position(&self) -> Self::Position {
         self.positioner.position()
@@ -116,9 +115,11 @@ impl<I, X> StreamOnce for State<I, X>
 where
     I: StreamOnce,
     X: Positioner<I::Item>,
+    I::Error: ParsingError<I::Item, I::Range, X::Position>,
 {
     type Item = I::Item;
     type Range = I::Range;
+    type Position = X::Position;
     type Error = I::Error;
 
     #[inline]
@@ -231,6 +232,7 @@ impl<I, X> RangeStream for State<I, X>
 where
     I: RangeStream,
     X: Clone + RangePositioner<I::Item, I::Range>,
+    I::Error: ParsingError<I::Item, I::Range, X::Position>,
     I::Position: Clone + Ord,
 {
     #[inline]

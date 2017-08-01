@@ -1,7 +1,7 @@
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-use primitives::{Consumed, ConsumedResult, Error, Info, ParseError, ParsingError, ParseResult, Parser,
-                 Positioned, Stream, StreamError, StreamOnce};
+use primitives::{Consumed, ConsumedResult, Error, ParseError, ParseResult, Parser, ParsingError,
+                 Positioned, SimpleInfo, Stream, StreamError, StreamOnce};
 use primitives::FastResult::*;
 
 macro_rules! impl_parser {
@@ -90,7 +90,7 @@ where
     match input.uncons() {
         Ok(c) => match predicate(c.clone()) {
             Some(c) => ConsumedOk((c, input)),
-            None => EmptyErr(ParseError::empty(position)),
+            None => EmptyErr(I::Error::empty(position)),
         },
         Err(err) => EmptyErr(ParseError::new(position, err)),
     }
@@ -215,7 +215,7 @@ where
     fn add_error(&mut self, error: &mut StreamError<Self::Input>) {
         error
             .errors
-            .push(Self::Error::Expected(Info::Token(self.c.clone())));
+            .push(<Self::Input as StreamOnce>::Error::expected_token(self.c.clone()));
     }
 }
 
@@ -249,7 +249,7 @@ where
     I: Stream,
 {
     cmp: C,
-    expected: Info<I::Item, I::Range>,
+    expected: SimpleInfo<I::Item, I::Range>,
     tokens: T,
     _marker: PhantomData<I>,
 }
@@ -271,14 +271,11 @@ where
                 Ok((other, rest)) => {
                     if !(self.cmp)(c, other.clone()) {
                         return if consumed {
-                            let errors = vec![
-                                Self::Error::Unexpected(Info::Token(other)),
-                                Self::Error::Expected(self.expected.clone()),
-                            ];
-                            let error = ParseError::from_errors(start, errors);
-                            ConsumedErr(error)
+                            let mut errors = <Self::Input as StreamOnce>::Error::unexpected_token(other);
+                            errors.add(<Self::Input as StreamOnce>::Error::expected(self.expected.clone()));
+                            ConsumedErr(errors)
                         } else {
-                            EmptyErr(ParseError::empty(start))
+                            EmptyErr(<Self::Input as StreamOnce>::Error::empty(start))
                         };
                     }
                     consumed = true;
@@ -303,7 +300,7 @@ where
         }
     }
     fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
-        errors.add_error(Self::Error::Expected(self.expected.clone()));
+        errors.add_error(<Self::Input as StreamOnce>::Error::expected(self.expected.clone()));
     }
 }
 
@@ -323,14 +320,18 @@ where
 ///     .parse("AbC")
 ///     .map(|x| x.0.as_str());
 /// assert_eq!(result, Ok("abc"));
-/// let result = tokens(|&l, r| (if l < r { r - l } else { l - r }) <= 2, Info::Range(&b"025"[..]), &b"025"[..])
+/// let result = tokens(|&l, r| (if l < r { r - l } else { l - r }) <= 2, SimpleInfo::Range(&b"025"[..]), &b"025"[..])
 ///     .parse(&b"123"[..])
 ///     .map(|x| x.0);
 /// assert_eq!(result, Ok(&b"025"[..]));
 /// # }
 /// ```
 #[inline(always)]
-pub fn tokens<C, T, I>(cmp: C, expected: Info<I::Item, I::Range>, tokens: T) -> Tokens<C, T, I>
+pub fn tokens<C, T, I>(
+    cmp: C,
+    expected: SimpleInfo<I::Item, I::Range>,
+    tokens: T,
+) -> Tokens<C, T, I>
 where
     C: FnMut(T::Item, I::Item) -> bool,
     T: Clone + IntoIterator,
@@ -552,7 +553,7 @@ where
         EmptyErr(match empty_err {
             None => ParseError::new(
                 input.position(),
-                Self::Error::Message("parser choice is empty".into()),
+                Error::Message("parser choice is empty".into()),
             ),
             Some(err) => err,
         })
@@ -589,7 +590,7 @@ where
 
     fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
         for expected in self.tokens.clone() {
-            errors.add_error(Self::Error::token(ErrorType::Expected, expected));
+            errors.add_expected_error(SimpleInfo::Token(expected));
         }
     }
 }
@@ -648,7 +649,7 @@ where
 /// ```
 /// # extern crate combine;
 /// # use combine::*;
-/// # use combine::primitives::{Error, Info};
+/// # use combine::primitives::{Error, SimpleInfo};
 /// # fn main() {
 /// let mut parser = many1(none_of(b"abc".iter().cloned()));
 /// let result = parser.parse(State::new(&b"xyb"[..]))
@@ -659,7 +660,7 @@ where
 /// assert_eq!(result, Err(ParseError {
 ///     position: 0,
 ///     errors: vec![
-///         Self::Error::Unexpected(Info::Token(b'a')),
+///         Error::Unexpected(Info::Token(b'a')),
 ///     ]
 /// }));
 /// # }
@@ -709,7 +710,7 @@ where
 /// ```
 /// # extern crate combine;
 /// # use combine::*;
-/// # use combine::primitives::{Error, Info};
+/// # use combine::primitives::{Error, SimpleInfo};
 /// # fn main() {
 /// let mut parser = count(2, token(b'a'));
 ///
@@ -770,7 +771,7 @@ where
 }
 
 #[derive(Clone)]
-pub struct Unexpected<I>(Info<I::Item, I::Range>, PhantomData<fn(I) -> I>)
+pub struct Unexpected<I>(SimpleInfo<I::Item, I::Range>, PhantomData<fn(I) -> I>)
 where
     I: Stream;
 impl<I> Parser for Unexpected<I>
@@ -781,10 +782,14 @@ where
     type Output = ();
     #[inline]
     fn parse_lazy(&mut self, input: I) -> ConsumedResult<(), I> {
-        EmptyErr(ParseError::empty(input.position()))
+        EmptyErr(<Self::Input as StreamOnce>::Error::empty(input.position()))
     }
     fn add_error(&mut self, error: &mut StreamError<Self::Input>) {
-        error.errors.push(Self::Error::Unexpected(self.0.clone()));
+        error.errors.push(match self.0 {
+            SimpleInfo::Token(b) => <Self::Input as StreamOnce>::Error::unexpected_token(b.clone()),
+            SimpleInfo::Range(b) => <Self::Input as StreamOnce>::Error::unexpected_range(b.clone()),
+            SimpleInfo::Borrowed(b) => <Self::Input as StreamOnce>::Error::unexpected_static_message(b),
+        });
     }
 }
 /// Always fails with `message` as an unexpected error.
@@ -798,14 +803,14 @@ where
 /// let result = unexpected("token")
 ///     .parse("a");
 /// assert!(result.is_err());
-/// assert!(result.err().unwrap().errors.iter().any(|m| *m == Self::Error::Unexpected("token".into())));
+/// assert!(result.err().unwrap().errors.iter().any(|m| *m == <Self::Input as StreamOnce>::Error::Unexpected("token".into())));
 /// # }
 /// ```
 #[inline(always)]
 pub fn unexpected<I, S>(message: S) -> Unexpected<I>
 where
     I: Stream,
-    S: Into<Info<I::Item, I::Range>>,
+    S: Into<SimpleInfo<I::Item, I::Range>>,
 {
     Unexpected(message.into(), PhantomData)
 }
@@ -890,13 +895,13 @@ where
     #[inline]
     fn parse_lazy(&mut self, input: I) -> ConsumedResult<(), I> {
         match input.clone().uncons() {
-            Err(ref err) if *err == Self::Error::end_of_input() => EmptyOk(((), input)),
-            _ => EmptyErr(ParseError::empty(input.position())),
+            Err(ref err) if *err == <Self::Input as StreamOnce>::Error::end_of_input() => EmptyOk(((), input)),
+            _ => EmptyErr(<Self::Input as StreamOnce>::Error::empty(input.position())),
         }
     }
 
     fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
-        errors.add_error(Self::Error::Expected("end of input".into()))
+        errors.add_error(<Self::Input as StreamOnce>::Error::Expected("end of input".into()))
     }
 }
 
@@ -913,8 +918,8 @@ where
 /// assert_eq!(parser.parse(State::new("x")), Err(ParseError {
 ///     position: SourcePosition::default(),
 ///     errors: vec![
-///         Self::Error::Unexpected('x'.into()),
-///         Self::Error::Expected("end of input".into())
+///         Error::Unexpected('x'.into()),
+///         Error::Expected("end of input".into())
 ///     ]
 /// }));
 /// # }
@@ -1258,8 +1263,8 @@ where
 /// assert_eq!(result_err, Err(ParseError {
 ///     position: SourcePosition::default(),
 ///     errors: vec![
-///         Self::Error::end_of_input(),
-///         Self::Error::Expected("digit".into())
+///         Error::end_of_input(),
+///         Error::Expected("digit".into())
 ///     ]
 /// }));
 /// # }
@@ -1402,8 +1407,8 @@ where
 /// assert_eq!(result_err, Err(ParseError {
 ///     position: SourcePosition::default(),
 ///     errors: vec![
-///         Self::Error::end_of_input(),
-///         Self::Error::Expected("digit".into())
+///         Error::end_of_input(),
+///         Error::Expected("digit".into())
 ///     ]
 /// }));
 /// # }
@@ -1454,7 +1459,7 @@ pub struct FnParser<I, F>(F, PhantomData<fn(I) -> I>);
 ///     }
 ///     else {
 ///         //Return an empty error since we only tested the first token of the stream
-///         let errors = ParseError::new(position, Self::Error::Expected(From::from("even number")));
+///         let errors = ParseError::new(position, <Self::Input as StreamOnce>::Error::Expected(From::from("even number")));
 ///         Err(Consumed::Empty(errors))
 ///     }
 /// });
@@ -1840,7 +1845,7 @@ where
 #[derive(Clone)]
 pub struct Message<P>(
     P,
-    Info<<P::Input as StreamOnce>::Item, <P::Input as StreamOnce>::Range>,
+    SimpleInfo<<P::Input as StreamOnce>::Item, <P::Input as StreamOnce>::Range>,
 )
 where
     P: Parser;
@@ -1860,7 +1865,7 @@ where
 
             // The message should always be added even if some input was consumed before failing
             ConsumedErr(mut err) => {
-                err.add_error(Self::Error::Message(self.1.clone()));
+                err.add_error(<Self::Input as StreamOnce>::Error::Message(self.1.clone()));
                 ConsumedErr(err)
             }
 
@@ -1871,7 +1876,7 @@ where
 
     fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
         self.0.add_error(errors);
-        errors.add_error(Self::Error::Message(self.1.clone()));
+        errors.add_error(<Self::Input as StreamOnce>::Error::Message(self.1.clone()));
     }
 }
 
@@ -1881,7 +1886,7 @@ where
 #[inline(always)]
 pub fn message<P>(
     p: P,
-    msg: Info<<P::Input as StreamOnce>::Item, <P::Input as StreamOnce>::Range>,
+    msg: SimpleInfo<<P::Input as StreamOnce>::Item, <P::Input as StreamOnce>::Range>,
 ) -> Message<P>
 where
     P: Parser,
@@ -2064,7 +2069,7 @@ where
 #[derive(Clone)]
 pub struct Expected<P>(
     P,
-    Info<<P::Input as StreamOnce>::Item, <P::Input as StreamOnce>::Range>,
+    SimpleInfo<<P::Input as StreamOnce>::Item, <P::Input as StreamOnce>::Range>,
 )
 where
     P: Parser;
@@ -2091,11 +2096,11 @@ where
             true
         } else {
             match *e {
-                Self::Error::Expected(_) => false,
+                Error::Expected(_) => false,
                 _ => true,
             }
         });
-        errors.add_error(Self::Error::Expected(self.1.clone()));
+        errors.add_error(<Self::Input as StreamOnce>::Error::Expected(self.1.clone()));
     }
 }
 
@@ -2105,7 +2110,7 @@ where
 #[inline(always)]
 pub fn expected<P>(
     p: P,
-    info: Info<<P::Input as StreamOnce>::Item, <P::Input as StreamOnce>::Range>,
+    info: SimpleInfo<<P::Input as StreamOnce>::Item, <P::Input as StreamOnce>::Range>,
 ) -> Expected<P>
 where
     P: Parser,
@@ -2160,7 +2165,7 @@ macro_rules! tuple_parser {
     ($h: ident, $($id: ident),+) => {
         impl <Input: Stream, $h:, $($id:),+> Parser for ($h, $($id),+)
             where Input: Stream,
-                  Input::Error: ParsingError<Input::Item, Input::Range>,
+                  Input::Error: ParsingError<Input::Item, Input::Range, Input::Position>,
                   $h: Parser<Input=Input>,
                   $($id: Parser<Input=Input>),+
         {
@@ -2194,7 +2199,7 @@ macro_rules! tuple_parser {
                         }
                         EmptyErr(mut err) => {
                             if let Ok(t) = input.uncons() {
-                                err.add_error(Self::Error::Unexpected(Info::Token(t)));
+                                err.add_error(<Self::Input as StreamOnce>::Error::unexpected_token(t));
                             }
                             $id.add_error(&mut err);
                             if consumed {
@@ -2344,9 +2349,9 @@ mod tests {
             Err(ParseError {
                 position: Default::default(),
                 errors: vec![
-                    Self::Error::Unexpected('a'.into()),
-                    Self::Error::Message("message".into()),
-                    Self::Error::Expected("my expected digit".into()),
+                    Error::Unexpected('a'.into()),
+                    Error::Message("message".into()),
+                    Error::Expected("my expected digit".into()),
                 ],
             })
         );
@@ -2361,8 +2366,8 @@ mod tests {
             Err(ParseError {
                 position: Default::default(),
                 errors: vec![
-                    Self::Error::Unexpected('a'.into()),
-                    Self::Error::Expected("digit".into()),
+                    Error::Unexpected('a'.into()),
+                    Error::Expected("digit".into()),
                 ],
             })
         );
@@ -2416,18 +2421,18 @@ mod tests {
         let empty_expected = Err(ParseError {
             position: SourcePosition { line: 1, column: 1 },
             errors: vec![
-                Self::Error::Unexpected('h'.into()),
-                Self::Error::Expected('o'.into()),
-                Self::Error::Message("expected message".into()),
+                Error::Unexpected('h'.into()),
+                Error::Expected('o'.into()),
+                Error::Message("expected message".into()),
             ],
         });
 
         let consumed_expected = Err(ParseError {
             position: SourcePosition { line: 1, column: 2 },
             errors: vec![
-                Self::Error::Unexpected('i'.into()),
-                Self::Error::Expected('o'.into()),
-                Self::Error::Message("expected message".into()),
+                Error::Unexpected('i'.into()),
+                Error::Expected('o'.into()),
+                Error::Message("expected message".into()),
             ],
         });
 
@@ -2470,14 +2475,14 @@ mod tests {
         let empty_expected = Err(ParseError {
             position: SourcePosition { line: 1, column: 1 },
             errors: vec![
-                Self::Error::Unexpected('h'.into()),
-                Self::Error::Expected("expected message".into()),
+                Error::Unexpected('h'.into()),
+                Error::Expected("expected message".into()),
             ],
         });
 
         let consumed_expected = Err(ParseError {
             position: SourcePosition { line: 1, column: 2 },
-            errors: vec![Self::Error::Unexpected('i'.into()), Self::Error::Expected('o'.into())],
+            errors: vec![Error::Unexpected('i'.into()), Error::Expected('o'.into())],
         });
 
         assert_eq!(empty0.parse(State::new(input)), empty_expected);
@@ -2497,8 +2502,8 @@ mod tests {
             Err(ParseError {
                 position: SourcePosition { line: 1, column: 1 },
                 errors: vec![
-                    Self::Error::Unexpected('h'.into()),
-                    Self::Error::Unexpected("test".into()),
+                    Error::Unexpected('h'.into()),
+                    Error::Unexpected("test".into()),
                 ],
             })
         );
@@ -2507,8 +2512,8 @@ mod tests {
             Err(ParseError {
                 position: SourcePosition { line: 1, column: 2 },
                 errors: vec![
-                    Self::Error::Unexpected('i'.into()),
-                    Self::Error::Unexpected("test".into()),
+                    Error::Unexpected('i'.into()),
+                    Error::Unexpected("test".into()),
                 ],
             })
         );
