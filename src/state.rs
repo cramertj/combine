@@ -1,6 +1,7 @@
 use std::fmt;
 
-use primitives::{Error, Positioned, RangeStream, IteratorStream, ReadStream, SliceStream, StreamOnce};
+use primitives::{Error, IteratorStream, Positioned, RangeStream, ReadStream, SliceStream,
+                 StreamOnce};
 
 /// Trait for tracking the current position of a `Stream`.
 pub trait Positioner<Item> {
@@ -118,9 +119,10 @@ where
 {
     type Item = I::Item;
     type Range = I::Range;
+    type Error = I::Error;
 
     #[inline]
-    fn uncons(&mut self) -> Result<I::Item, Error<I::Item, I::Range>> {
+    fn uncons(&mut self) -> Result<I::Item, I::Error> {
         self.input.uncons().map(|c| {
             self.positioner.update(&c);
             c
@@ -232,7 +234,7 @@ where
     I::Position: Clone + Ord,
 {
     #[inline]
-    fn uncons_range(&mut self, size: usize) -> Result<I::Range, Error<I::Item, I::Range>> {
+    fn uncons_range(&mut self, size: usize) -> Result<I::Range, I::Error> {
         self.input.uncons_range(size).map(|range| {
             self.positioner.update_range(&range);
             range
@@ -240,7 +242,7 @@ where
     }
 
     #[inline]
-    fn uncons_while<F>(&mut self, mut predicate: F) -> Result<I::Range, Error<I::Item, I::Range>>
+    fn uncons_while<F>(&mut self, mut predicate: F) -> Result<I::Range, I::Error>
     where
         F: FnMut(I::Item) -> bool,
     {

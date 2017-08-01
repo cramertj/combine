@@ -156,6 +156,42 @@ pub enum Error<T, R> {
     Other(Box<StdError + Send + Sync>),
 }
 
+impl<T, R> ParsingError<T, R> for Error<T, R> {
+
+    fn item(typ: ErrorType, item: T) -> Self {
+        match typ {
+            ErrorType::Unexpected => Error::Unexpected(Info::Token(item)),
+            ErrorType::Expected => Error::Expected(Info::Token(item)),
+            ErrorType::Message => Error::Message(Info::Token(item)),
+        }
+    }
+    fn range(typ: ErrorType, range: R) -> Self {
+        match typ {
+            ErrorType::Unexpected => Error::Unexpected(Info::Range(range)),
+            ErrorType::Expected => Error::Expected(Info::Range(range)),
+            ErrorType::Message => Error::Message(Info::Range(range)),
+        }
+    }
+    fn message<U>(typ: ErrorType, msg: U) -> Self
+    where
+        U: fmt::Display
+        {
+            match typ {
+                ErrorType::Unexpected => Error::Unexpected(Info::Owned(msg.to_string())),
+                ErrorType::Expected => Error::Expected(Info::Owned(msg.to_string())),
+                ErrorType::Message => Error::Message(Info::Owned(msg.to_string())),
+            }
+        }
+
+    fn static_message(typ: ErrorType, msg: &'static str) -> Self {
+            match typ {
+                ErrorType::Unexpected => Error::Unexpected(Info::Borrowed(msg)),
+                ErrorType::Expected => Error::Expected(Info::Borrowed(msg)),
+                ErrorType::Message => Error::Message(Info::Borrowed(msg)),
+            }
+    }
+}
+
 impl<T, R> Error<T, R> {
     pub fn map_token<F, U>(self, f: F) -> Error<U, R>
     where
@@ -626,6 +662,45 @@ impl<T: fmt::Display, R: fmt::Display> fmt::Display for Error<T, R> {
 /// `I` is the specific stream type used in the parser.
 pub type ParseResult<O, I> = Result<(O, Consumed<I>), Consumed<StreamError<I>>>;
 
+pub enum ErrorType {
+    Unexpected,
+    Expected,
+    Message,
+}
+
+pub trait ParsingError<Item, Range> {
+    fn item(typ: ErrorType, item: Item) -> Self;
+    fn range(typ: ErrorType, range: Range) -> Self;
+    fn message<T>(typ: ErrorType, msg: T) -> Self
+    where
+        T: fmt::Display;
+
+    fn static_message(typ: ErrorType, msg: &'static str) -> Self {
+        Self::message(typ, msg)
+    }
+
+    fn end_of_input() -> Self {
+        Self::static_message(ErrorType::Unexpected, "end of input")
+    }
+}
+
+pub struct UnexpectedParse;
+
+impl<Item, Range> ParsingError<Item, Range> for UnexpectedParse {
+    fn item(typ: ErrorType, item: Item) -> Self {
+        UnexpectedParse
+    }
+    fn range(typ: ErrorType, range: Range) -> Self {
+        UnexpectedParse
+    }
+    fn message<T>(typ: ErrorType, msg: T) -> Self
+    where
+        T: fmt::Display,
+    {
+        UnexpectedParse
+    }
+}
+
 pub trait Positioned {
     /// Type which represents the position in a stream.
     /// `Ord` is required to allow parsers to determine which of two positions are further ahead.
@@ -645,17 +720,19 @@ pub trait StreamOnce {
     /// `Self::Item` for this type.
     type Range: Clone + PartialEq;
 
+    type Error: ParsingError<Self::Item, Self::Range>;
     /// Takes a stream and removes its first item, yielding the item and the rest of the elements.
     /// Returns `Err` if no element could be retrieved.
-    fn uncons(&mut self) -> Result<Self::Item, Error<Self::Item, Self::Range>>;
+    fn uncons(&mut self) -> Result<Self::Item, Self::Error>;
 }
 
 /// A stream of tokens which can be duplicated
-pub trait Stream: StreamOnce + Positioned + Clone {}
+pub trait Stream: StreamOnce + Positioned + Clone where Self::Error: ParsingError<Self::Item, Self::Range> {}
 
 impl<I> Stream for I
 where
     I: StreamOnce + Positioned + Clone,
+    I::Error: ParsingError<I::Item, I::Range>,
 {
 }
 
@@ -677,11 +754,11 @@ where
 pub trait RangeStream: Stream {
     /// Takes `size` elements from the stream.
     /// Fails if the length of the stream is less than `size`.
-    fn uncons_range(&mut self, size: usize) -> Result<Self::Range, Error<Self::Item, Self::Range>>;
+    fn uncons_range(&mut self, size: usize) -> Result<Self::Range, Self::Error>;
 
     /// Takes items from stream, testing each one with `predicate`.
     /// returns the range of items which passed `predicate`.
-    fn uncons_while<F>(&mut self, f: F) -> Result<Self::Range, Error<Self::Item, Self::Range>>
+    fn uncons_while<F>(&mut self, f: F) -> Result<Self::Range, Self::Error>
     where
         F: FnMut(Self::Item) -> bool;
 
@@ -726,7 +803,7 @@ pub trait Range {
 
 impl<'a> RangeStream for &'a str {
     #[inline]
-    fn uncons_while<F>(&mut self, mut f: F) -> Result<&'a str, Error<char, &'a str>>
+    fn uncons_while<F>(&mut self, mut f: F) -> Result<&'a str, Self::Error>
     where
         F: FnMut(Self::Item) -> bool,
     {
@@ -745,7 +822,7 @@ impl<'a> RangeStream for &'a str {
     }
 
     #[inline]
-    fn uncons_range(&mut self, size: usize) -> Result<&'a str, Error<char, &'a str>> {
+    fn uncons_range(&mut self, size: usize) -> Result<&'a str, Self::Error> {
         fn is_char_boundary(s: &str, index: usize) -> bool {
             if index == s.len() {
                 return true;
@@ -795,7 +872,7 @@ where
     T: Clone + PartialEq,
 {
     #[inline]
-    fn uncons_range(&mut self, size: usize) -> Result<&'a [T], Error<T, &'a [T]>> {
+    fn uncons_range(&mut self, size: usize) -> Result<&'a [T], Self::Error> {
         if size <= self.len() {
             let (result, remaining) = self.split_at(size);
             *self = remaining;
@@ -806,7 +883,7 @@ where
     }
 
     #[inline]
-    fn uncons_while<F>(&mut self, mut f: F) -> Result<&'a [T], Error<T, &'a [T]>>
+    fn uncons_while<F>(&mut self, mut f: F) -> Result<&'a [T], Self::Error>
     where
         F: FnMut(Self::Item) -> bool,
     {
@@ -834,16 +911,17 @@ impl<'a> Positioned for &'a str {
 impl<'a> StreamOnce for &'a str {
     type Item = char;
     type Range = &'a str;
+    type Error = UnexpectedParse;
 
     #[inline]
-    fn uncons(&mut self) -> Result<char, Error<char, &'a str>> {
+    fn uncons(&mut self) -> Result<char, Self::Error> {
         let mut chars = self.chars();
         match chars.next() {
             Some(c) => {
                 *self = chars.as_str();
                 Ok(c)
             }
-            None => Err(Error::end_of_input()),
+            None => Err(UnexpectedParse),
         }
     }
 }
@@ -863,15 +941,16 @@ where
 {
     type Item = T;
     type Range = &'a [T];
+    type Error = UnexpectedParse;
 
     #[inline]
-    fn uncons(&mut self) -> Result<T, Error<T, &'a [T]>> {
+    fn uncons(&mut self) -> Result<T, Self::Error> {
         match self.split_first() {
             Some((first, rest)) => {
                 *self = rest;
                 Ok(first.clone())
             }
-            None => Err(Error::end_of_input()),
+            None => Err(UnexpectedParse),
         }
     }
 }
@@ -901,15 +980,16 @@ where
 {
     type Item = &'a T;
     type Range = &'a [T];
+    type Error = UnexpectedParse;
 
     #[inline]
-    fn uncons(&mut self) -> Result<&'a T, Error<&'a T, &'a [T]>> {
+    fn uncons(&mut self) -> Result<&'a T, Self::Error> {
         match self.0.split_first() {
             Some((first, rest)) => {
                 self.0 = rest;
                 Ok(first)
             }
-            None => Err(Error::end_of_input()),
+            None => Err(UnexpectedParse),
         }
     }
 }
@@ -919,7 +999,7 @@ where
     T: Clone + PartialEq + 'a,
 {
     #[inline]
-    fn uncons_range(&mut self, size: usize) -> Result<&'a [T], Error<&'a T, &'a [T]>> {
+    fn uncons_range(&mut self, size: usize) -> Result<&'a [T], Self::Error> {
         if size <= self.0.len() {
             let (range, rest) = self.0.split_at(size);
             self.0 = rest;
@@ -930,7 +1010,7 @@ where
     }
 
     #[inline]
-    fn uncons_while<F>(&mut self, mut f: F) -> Result<&'a [T], Error<&'a T, &'a [T]>>
+    fn uncons_while<F>(&mut self, mut f: F) -> Result<&'a [T], Self::Error>
     where
         F: FnMut(Self::Item) -> bool,
     {
@@ -991,12 +1071,13 @@ where
 {
     type Item = I::Item;
     type Range = I::Item;
+    type Error = UnexpectedParse;
 
     #[inline]
-    fn uncons(&mut self) -> Result<I::Item, Error<I::Item, I::Item>> {
+    fn uncons(&mut self) -> Result<I::Item, Self::Error> {
         match self.next() {
             Some(x) => Ok(x),
-            None => Err(Error::end_of_input()),
+            None => Err(UnexpectedParse),
         }
     }
 }
@@ -1008,13 +1089,12 @@ pub struct ReadStream<R> {
 impl<R: Read> StreamOnce for ReadStream<R> {
     type Item = u8;
     type Range = u8;
+    type Error = Error<u8, u8>;
 
     #[inline]
-    fn uncons(&mut self) -> Result<u8, Error<u8, u8>> {
+    fn uncons(&mut self) -> Result<u8, Self::Error> {
         match self.bytes.next() {
-            Some(Ok(b)) => {
-                Ok(b)
-            }
+            Some(Ok(b)) => Ok(b),
             Some(Err(err)) => Err(err.into()),
             None => Err(Error::end_of_input()),
         }
@@ -1733,7 +1813,7 @@ where
     I::Item: Clone,
 {
     #[inline]
-    fn uncons(&mut self, offset: usize) -> Result<I::Item, Error<I::Item, I::Range>> {
+    fn uncons(&mut self, offset: usize) -> Result<I::Item, I::Error> {
         if offset >= self.offset {
             let position = self.iter.position();
             let item = try!(self.iter.uncons());
@@ -1807,7 +1887,7 @@ where
         }
     }
     #[inline]
-    fn uncons(&self, offset: usize) -> Result<I::Item, Error<I::Item, I::Range>> {
+    fn uncons(&self, offset: usize) -> Result<I::Item, I::Error> {
         unsafe { (*self.buffer.get()).uncons(offset) }
     }
     #[inline(always)]
@@ -1841,9 +1921,10 @@ where
 {
     type Item = I::Item;
     type Range = I::Range;
+    type Error = Error<I::Item, I::Range>;
 
     #[inline]
-    fn uncons(&mut self) -> Result<I::Item, Error<I::Item, I::Range>> {
+    fn uncons(&mut self) -> Result<I::Item, Self::Error> {
         let value = try!(self.buffer.uncons(self.offset));
         self.offset += 1;
         Ok(value)

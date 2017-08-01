@@ -1,6 +1,6 @@
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-use primitives::{Consumed, ConsumedResult, Error, Info, ParseError, ParseResult, Parser,
+use primitives::{Consumed, ConsumedResult, Error, Info, ParseError, ParsingError, ParseResult, Parser,
                  Positioned, Stream, StreamError, StreamOnce};
 use primitives::FastResult::*;
 
@@ -215,7 +215,7 @@ where
     fn add_error(&mut self, error: &mut StreamError<Self::Input>) {
         error
             .errors
-            .push(Error::Expected(Info::Token(self.c.clone())));
+            .push(Self::Error::Expected(Info::Token(self.c.clone())));
     }
 }
 
@@ -272,8 +272,8 @@ where
                     if !(self.cmp)(c, other.clone()) {
                         return if consumed {
                             let errors = vec![
-                                Error::Unexpected(Info::Token(other)),
-                                Error::Expected(self.expected.clone()),
+                                Self::Error::Unexpected(Info::Token(other)),
+                                Self::Error::Expected(self.expected.clone()),
                             ];
                             let error = ParseError::from_errors(start, errors);
                             ConsumedErr(error)
@@ -303,7 +303,7 @@ where
         }
     }
     fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
-        errors.add_error(Error::Expected(self.expected.clone()));
+        errors.add_error(Self::Error::Expected(self.expected.clone()));
     }
 }
 
@@ -552,7 +552,7 @@ where
         EmptyErr(match empty_err {
             None => ParseError::new(
                 input.position(),
-                Error::Message("parser choice is empty".into()),
+                Self::Error::Message("parser choice is empty".into()),
             ),
             Some(err) => err,
         })
@@ -589,7 +589,7 @@ where
 
     fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
         for expected in self.tokens.clone() {
-            errors.add_error(Error::Expected(Info::Token(expected)));
+            errors.add_error(Self::Error::token(ErrorType::Expected, expected));
         }
     }
 }
@@ -659,7 +659,7 @@ where
 /// assert_eq!(result, Err(ParseError {
 ///     position: 0,
 ///     errors: vec![
-///         Error::Unexpected(Info::Token(b'a')),
+///         Self::Error::Unexpected(Info::Token(b'a')),
 ///     ]
 /// }));
 /// # }
@@ -784,7 +784,7 @@ where
         EmptyErr(ParseError::empty(input.position()))
     }
     fn add_error(&mut self, error: &mut StreamError<Self::Input>) {
-        error.errors.push(Error::Unexpected(self.0.clone()));
+        error.errors.push(Self::Error::Unexpected(self.0.clone()));
     }
 }
 /// Always fails with `message` as an unexpected error.
@@ -798,7 +798,7 @@ where
 /// let result = unexpected("token")
 ///     .parse("a");
 /// assert!(result.is_err());
-/// assert!(result.err().unwrap().errors.iter().any(|m| *m == Error::Unexpected("token".into())));
+/// assert!(result.err().unwrap().errors.iter().any(|m| *m == Self::Error::Unexpected("token".into())));
 /// # }
 /// ```
 #[inline(always)]
@@ -890,13 +890,13 @@ where
     #[inline]
     fn parse_lazy(&mut self, input: I) -> ConsumedResult<(), I> {
         match input.clone().uncons() {
-            Err(ref err) if *err == Error::end_of_input() => EmptyOk(((), input)),
+            Err(ref err) if *err == Self::Error::end_of_input() => EmptyOk(((), input)),
             _ => EmptyErr(ParseError::empty(input.position())),
         }
     }
 
     fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
-        errors.add_error(Error::Expected("end of input".into()))
+        errors.add_error(Self::Error::Expected("end of input".into()))
     }
 }
 
@@ -913,8 +913,8 @@ where
 /// assert_eq!(parser.parse(State::new("x")), Err(ParseError {
 ///     position: SourcePosition::default(),
 ///     errors: vec![
-///         Error::Unexpected('x'.into()),
-///         Error::Expected("end of input".into())
+///         Self::Error::Unexpected('x'.into()),
+///         Self::Error::Expected("end of input".into())
 ///     ]
 /// }));
 /// # }
@@ -1258,8 +1258,8 @@ where
 /// assert_eq!(result_err, Err(ParseError {
 ///     position: SourcePosition::default(),
 ///     errors: vec![
-///         Error::end_of_input(),
-///         Error::Expected("digit".into())
+///         Self::Error::end_of_input(),
+///         Self::Error::Expected("digit".into())
 ///     ]
 /// }));
 /// # }
@@ -1402,8 +1402,8 @@ where
 /// assert_eq!(result_err, Err(ParseError {
 ///     position: SourcePosition::default(),
 ///     errors: vec![
-///         Error::end_of_input(),
-///         Error::Expected("digit".into())
+///         Self::Error::end_of_input(),
+///         Self::Error::Expected("digit".into())
 ///     ]
 /// }));
 /// # }
@@ -1454,7 +1454,7 @@ pub struct FnParser<I, F>(F, PhantomData<fn(I) -> I>);
 ///     }
 ///     else {
 ///         //Return an empty error since we only tested the first token of the stream
-///         let errors = ParseError::new(position, Error::Expected(From::from("even number")));
+///         let errors = ParseError::new(position, Self::Error::Expected(From::from("even number")));
 ///         Err(Consumed::Empty(errors))
 ///     }
 /// });
@@ -1860,7 +1860,7 @@ where
 
             // The message should always be added even if some input was consumed before failing
             ConsumedErr(mut err) => {
-                err.add_error(Error::Message(self.1.clone()));
+                err.add_error(Self::Error::Message(self.1.clone()));
                 ConsumedErr(err)
             }
 
@@ -1871,7 +1871,7 @@ where
 
     fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
         self.0.add_error(errors);
-        errors.add_error(Error::Message(self.1.clone()));
+        errors.add_error(Self::Error::Message(self.1.clone()));
     }
 }
 
@@ -2091,11 +2091,11 @@ where
             true
         } else {
             match *e {
-                Error::Expected(_) => false,
+                Self::Error::Expected(_) => false,
                 _ => true,
             }
         });
-        errors.add_error(Error::Expected(self.1.clone()));
+        errors.add_error(Self::Error::Expected(self.1.clone()));
     }
 }
 
@@ -2160,6 +2160,7 @@ macro_rules! tuple_parser {
     ($h: ident, $($id: ident),+) => {
         impl <Input: Stream, $h:, $($id:),+> Parser for ($h, $($id),+)
             where Input: Stream,
+                  Input::Error: ParsingError<Input::Item, Input::Range>,
                   $h: Parser<Input=Input>,
                   $($id: Parser<Input=Input>),+
         {
@@ -2193,7 +2194,7 @@ macro_rules! tuple_parser {
                         }
                         EmptyErr(mut err) => {
                             if let Ok(t) = input.uncons() {
-                                err.add_error(Error::Unexpected(Info::Token(t)));
+                                err.add_error(Self::Error::Unexpected(Info::Token(t)));
                             }
                             $id.add_error(&mut err);
                             if consumed {
@@ -2343,9 +2344,9 @@ mod tests {
             Err(ParseError {
                 position: Default::default(),
                 errors: vec![
-                    Error::Unexpected('a'.into()),
-                    Error::Message("message".into()),
-                    Error::Expected("my expected digit".into()),
+                    Self::Error::Unexpected('a'.into()),
+                    Self::Error::Message("message".into()),
+                    Self::Error::Expected("my expected digit".into()),
                 ],
             })
         );
@@ -2360,8 +2361,8 @@ mod tests {
             Err(ParseError {
                 position: Default::default(),
                 errors: vec![
-                    Error::Unexpected('a'.into()),
-                    Error::Expected("digit".into()),
+                    Self::Error::Unexpected('a'.into()),
+                    Self::Error::Expected("digit".into()),
                 ],
             })
         );
@@ -2415,18 +2416,18 @@ mod tests {
         let empty_expected = Err(ParseError {
             position: SourcePosition { line: 1, column: 1 },
             errors: vec![
-                Error::Unexpected('h'.into()),
-                Error::Expected('o'.into()),
-                Error::Message("expected message".into()),
+                Self::Error::Unexpected('h'.into()),
+                Self::Error::Expected('o'.into()),
+                Self::Error::Message("expected message".into()),
             ],
         });
 
         let consumed_expected = Err(ParseError {
             position: SourcePosition { line: 1, column: 2 },
             errors: vec![
-                Error::Unexpected('i'.into()),
-                Error::Expected('o'.into()),
-                Error::Message("expected message".into()),
+                Self::Error::Unexpected('i'.into()),
+                Self::Error::Expected('o'.into()),
+                Self::Error::Message("expected message".into()),
             ],
         });
 
@@ -2469,14 +2470,14 @@ mod tests {
         let empty_expected = Err(ParseError {
             position: SourcePosition { line: 1, column: 1 },
             errors: vec![
-                Error::Unexpected('h'.into()),
-                Error::Expected("expected message".into()),
+                Self::Error::Unexpected('h'.into()),
+                Self::Error::Expected("expected message".into()),
             ],
         });
 
         let consumed_expected = Err(ParseError {
             position: SourcePosition { line: 1, column: 2 },
-            errors: vec![Error::Unexpected('i'.into()), Error::Expected('o'.into())],
+            errors: vec![Self::Error::Unexpected('i'.into()), Self::Error::Expected('o'.into())],
         });
 
         assert_eq!(empty0.parse(State::new(input)), empty_expected);
@@ -2496,8 +2497,8 @@ mod tests {
             Err(ParseError {
                 position: SourcePosition { line: 1, column: 1 },
                 errors: vec![
-                    Error::Unexpected('h'.into()),
-                    Error::Unexpected("test".into()),
+                    Self::Error::Unexpected('h'.into()),
+                    Self::Error::Unexpected("test".into()),
                 ],
             })
         );
@@ -2506,8 +2507,8 @@ mod tests {
             Err(ParseError {
                 position: SourcePosition { line: 1, column: 2 },
                 errors: vec![
-                    Error::Unexpected('i'.into()),
-                    Error::Unexpected("test".into()),
+                    Self::Error::Unexpected('i'.into()),
+                    Self::Error::Unexpected("test".into()),
                 ],
             })
         );

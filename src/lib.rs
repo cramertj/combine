@@ -185,9 +185,14 @@ macro_rules! impl_token_parser {
     ($name: ident($($ty_var: ident),*), $ty: ty, $inner_type: ty) => {
     #[derive(Clone)]
     pub struct $name<I $(,$ty_var)*>($inner_type, PhantomData<fn (I) -> I>)
-        where I: Stream<Item=$ty> $(, $ty_var : Parser<Input=I>)*;
+        where I: Stream<Item=$ty>,
+              I::Error: ParsingError<$ty, I::Range>
+              $(, $ty_var : Parser<Input=I>)*;
     impl <I $(,$ty_var)*> Parser for $name<I $(,$ty_var)*>
-        where I: Stream<Item=$ty> $(, $ty_var : Parser<Input=I>)* {
+        where I: Stream<Item=$ty>,
+              I::Error: ParsingError<$ty, I::Range>
+              $(, $ty_var : Parser<Input=I>)*
+    {
         type Input = I;
         type Output = <$inner_type as Parser>::Output;
         #[inline]
@@ -351,6 +356,7 @@ mod tests {
     fn term<I>(input: I) -> ParseResult<Expr, I>
     where
         I: Stream<Item = char>,
+              I::Error: ParsingError<I::Item, I::Range>
     {
         fn times(l: Expr, r: Expr) -> Expr {
             Expr::Times(Box::new(l), Box::new(r))
