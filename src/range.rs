@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use primitives::{ConsumedResult, Error, Info, Parser, ParsingError, RangeStream, StreamError,
+use primitives::{ConsumedResult, Error, SimpleInfo, Info, Parser, ParsingError, RangeStream, StreamError,
                  StreamOnce};
 use primitives::FastResult::*;
 
@@ -29,9 +29,9 @@ where
             Err(err) => EmptyErr(err),
         }
     }
-    fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
+    fn add_error(&mut self, errors: &mut <Self::Input as StreamOnce>::Error) {
         // TODO Add unexpected message?
-        errors.add_error(Error::Expected(Info::Range(self.0.clone())));
+        errors.add_expected(SimpleInfo::Range(self.0.clone()));
     }
 }
 
@@ -52,7 +52,7 @@ where
         let distance = input.distance(&new_input.into_inner());
         take(distance).parse_lazy(input)
     }
-    fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
+    fn add_error(&mut self, errors: &mut <Self::Input as StreamOnce>::Error) {
         self.0.add_error(errors)
     }
 }
@@ -311,7 +311,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use primitives::Parser;
+    use primitives::{Parser, SimpleParser};
 
     #[test]
     fn take_while_test() {

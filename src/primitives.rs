@@ -23,7 +23,7 @@ macro_rules! ctry {
 }
 
 /// Newtype around a pointer offset into a slice stream (`&[T]`/`&str`).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct PointerOffset(pub usize);
 
 impl fmt::Display for PointerOffset {
@@ -174,7 +174,7 @@ pub enum Error<T, R> {
     Other(Box<StdError + Send + Sync>),
 }
 
-impl<Item, Range, Position> ParsingError<Item, Range, Position> for Error<Item, Range> {
+impl<Item, Range, Position> ParsingError<Item, Range, Position> for Error<Item, Range> where Item: PartialEq, Range: PartialEq {
     fn empty(_: Position) -> Self {
         unimplemented!()
     }
@@ -218,6 +218,12 @@ impl<Item, Range, Position> ParsingError<Item, Range, Position> for Error<Item, 
     fn static_message(msg: &'static str) -> Self {
         Error::Message(Info::Borrowed(msg))
     }
+    fn message_token(token: Item) -> Self {
+            Error::Message(Info::Token(token))
+    }
+    fn message_range(token: Range) -> Self {
+            Error::Message(Info::Range(token))
+    }
 
     fn into_other<T>(self) -> T
         where T: ParsingError<Item, Range, Position>
@@ -259,7 +265,7 @@ where
     fn empty(pos: Position) -> Self {
         ParseError::empty(pos)
     }
-    fn add(mut self, other: Self) -> Self {
+    fn merge(mut self, other: Self) -> Self {
         self.merge(other)
     }
     fn unexpected_token(token: Item) -> Self {
@@ -296,6 +302,35 @@ where
             Error::Expected(Info::Owned(msg.to_string())),
         )
     }
+    fn message_token(token: Item) -> Self {
+        ParseError::new(
+            Position::default(),
+            Error::Message(Info::Token(token)),
+        )
+    }
+    fn message_range(token: Range) -> Self {
+        ParseError::new(
+            Position::default(),
+            Error::Message(Info::Range(token)),
+        )
+    }
+    fn set_expected<F>(&mut self, info: SimpleInfo<Item, Range>, f: F) where F: FnOnce(&mut Self) {
+        let start = self.errors.len();
+        f(self);
+        // Replace all expected errors that were added from the previous add_error
+        // with this expected error
+        let mut i = 0;
+        self.errors.retain(|e| if i < start {
+            i += 1;
+            true
+        } else {
+            match *e {
+                Error::Expected(_) => false,
+                _ => true,
+            }
+        });
+        self.add_expected(info);
+    }
     fn expected_static_message(msg: &'static str) -> Self {
         ParseError::new(Position::default(), Error::Expected(Info::Borrowed(msg)))
     }
@@ -310,7 +345,7 @@ where
         where T: ParsingError<Item, Range, Position>
         {
             match self.errors.pop(){
-                Some(err) => T::empty(self.position).add(err.into_other()),
+                Some(err) => T::empty(self.position).merge(err.into_other()),
                 None => T::empty(self.position),
             }
         }
@@ -797,9 +832,9 @@ pub enum SimpleInfo<T, R> {
     Borrowed(&'static str),
 }
 
-pub trait ParsingError<Item, Range, Position>: Sized {
+pub trait ParsingError<Item, Range, Position>: Sized + PartialEq {
     fn empty(position: Position) -> Self;
-    fn add(self, other: Self) -> Self {
+    fn merge(self, other: Self) -> Self {
         other
     }
 
@@ -828,7 +863,11 @@ pub trait ParsingError<Item, Range, Position>: Sized {
     where
         T: fmt::Display;
     fn add_expected(&mut self, info: SimpleInfo<Item, Range>) {
-        *self = Self::expected(info)
+        self.set_expected(info, |_| ())
+    }
+    fn set_expected<F>(&mut self, info: SimpleInfo<Item, Range>, f: F) where F: FnOnce(&mut Self) {
+        f(self);
+        *self = Self::expected(info);
     }
     fn expected(info: SimpleInfo<Item, Range>) -> Self {
         match info {
@@ -841,6 +880,18 @@ pub trait ParsingError<Item, Range, Position>: Sized {
         Self::expected_message(msg)
     }
 
+    fn add_message(&mut self, info: SimpleInfo<Item, Range>) {
+        *self = match info {
+            SimpleInfo::Token(b) => Self::message_token(b),
+            SimpleInfo::Range(b) => Self::message_range(b),
+            SimpleInfo::Borrowed(b) => Self::static_message(b),
+        };
+    }
+    fn add_static_message(&mut self, msg: &'static str) {
+        *self = Self::static_message(msg)
+    }
+    fn message_token(token: Item) -> Self;
+    fn message_range(token: Range) -> Self;
     fn message<T>(msg: T) -> Self where T: fmt::Display;
     fn static_message(msg: &'static str) -> Self {
         Self::message(msg)
@@ -854,6 +905,7 @@ pub trait ParsingError<Item, Range, Position>: Sized {
         where T: ParsingError<Item, Range, Position>;
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum UnexpectedParse {
     Eoi,
     Unexpected,
@@ -892,6 +944,12 @@ impl<Item, Range, Position> ParsingError<Item, Range, Position> for UnexpectedPa
     where
         T: fmt::Display,
     {
+        UnexpectedParse::Unexpected
+    }
+    fn message_token(token: Item) -> Self {
+        UnexpectedParse::Unexpected
+    }
+    fn message_range(token: Range) -> Self {
         UnexpectedParse::Unexpected
     }
 
@@ -973,6 +1031,35 @@ where
     }
 }
 
+impl<S> RangeStream for SimpleStream<S>
+where
+    S: RangeStream,
+    S::Position: Default
+{
+    fn uncons_range(&mut self, size: usize) -> Result<Self::Range, Self::Error> {
+        self.0.uncons_range(size).map_err(Self::Error::into_other)
+    }
+
+    fn uncons_while<F>(&mut self, f: F) -> Result<Self::Range, Self::Error>
+    where
+        F: FnMut(Self::Item) -> bool
+    {
+
+        self.0.uncons_while(f)
+        .map_err(Self::Error::into_other)
+    }
+
+    fn distance(&self, end: &Self) -> usize {
+        self.0.distance(&end.0)
+    }
+}
+
+impl<S> Positioned for SimpleStream<S> where S: StreamOnce + Positioned, S::Position: Default {
+    fn position(&self) -> S::Position {
+        self.0.position()
+    }
+}
+
 #[inline]
 pub fn uncons<I>(mut input: I) -> ParseResult<I::Item, I>
 where
@@ -1014,7 +1101,7 @@ where
     I::Range: Range,
 {
     match input.uncons_while(predicate) {
-        Err(err) => EmptyErr(I::Error::empty(input.position()).add(err)),
+        Err(err) => EmptyErr(I::Error::empty(input.position()).merge(err)),
         Ok(x) => if x.len() == 0 {
             EmptyOk((x, input))
         } else {
@@ -1137,6 +1224,7 @@ impl<'a> Positioned for &'a str {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum StringStreamError {
     UnexpectedParse,
     Eoi,
@@ -1176,6 +1264,12 @@ impl<Item, Range, Position> ParsingError<Item, Range, Position> for StringStream
     where
         T: fmt::Display,
     {
+        StringStreamError::UnexpectedParse
+    }
+    fn message_token(token: Item) -> Self {
+        StringStreamError::UnexpectedParse
+    }
+    fn message_range(token: Range) -> Self {
         StringStreamError::UnexpectedParse
     }
     fn into_other<T>(self) -> T
@@ -1554,11 +1648,11 @@ pub trait Parser {
     /// [`ParseError`] otherwise.
     ///
     /// [`ParseError`]: primitives/struct.ParseError.html
-    fn parse(
+    fn custom_parse(
         &mut self,
         input: Self::Input,
-    ) -> Result<(Self::Output, Self::Input), StreamError<Self::Input>> {
-        match self.parse_stream(SimpleStream(input)) {
+    ) -> Result<(Self::Output, Self::Input), <Self::Input as StreamOnce>::Error> {
+        match self.parse_stream(input) {
             Ok((v, state)) => Ok((v, state.into_inner())),
             Err(error) => Err(error.into_inner()),
         }
@@ -1594,7 +1688,7 @@ pub trait Parser {
         let mut result = self.parse_lazy(input.clone());
         if let FastResult::EmptyErr(ref mut error) = result {
             if let Ok(t) = input.uncons() {
-                error.add_error(Error::Unexpected(Info::Token(t)));
+                error.add_unexpected(SimpleInfo::Token(t));
             }
             self.add_error(error);
         }
@@ -1632,7 +1726,7 @@ pub trait Parser {
     /// See [`parse_lazy`] for details.
     ///
     /// [`parse_lazy`]: trait.Parser.html#method.parse_lazy
-    fn add_error(&mut self, _error: &mut StreamError<Self::Input>) {}
+    fn add_error(&mut self, _error: &mut <Self::Input as StreamOnce>::Error) {}
 
     /// Borrows a parser instead of consuming it.
     ///
@@ -1872,7 +1966,7 @@ pub trait Parser {
     fn message<S>(self, msg: S) -> Message<Self>
     where
         Self: Sized,
-        S: Into<Info<<Self::Input as StreamOnce>::Item, <Self::Input as StreamOnce>::Range>>,
+        S: Into<SimpleInfo<<Self::Input as StreamOnce>::Item, <Self::Input as StreamOnce>::Range>>,
     {
         message(self, msg.into())
     }
@@ -1898,7 +1992,7 @@ pub trait Parser {
     fn expected<S>(self, msg: S) -> Expected<Self>
     where
         Self: Sized,
-        S: Into<Info<<Self::Input as StreamOnce>::Item, <Self::Input as StreamOnce>::Range>>,
+        S: Into<SimpleInfo<<Self::Input as StreamOnce>::Item, <Self::Input as StreamOnce>::Range>>,
     {
         expected(self, msg.into())
     }
@@ -1982,6 +2076,36 @@ pub trait Parser {
         Box::new(self)
     }
 }
+
+pub trait SimpleParser<Input> where Input: Stream {
+    type Output;
+
+    /// Entry point of the parser. Takes some input and tries to parse it.
+    ///
+    /// Returns the parsed result and the remaining input if the parser succeeds, or a
+    /// [`ParseError`] otherwise.
+    ///
+    /// [`ParseError`]: primitives/struct.ParseError.html
+    fn parse(
+        &mut self,
+        input: Input,
+    ) -> Result<(Self::Output, Input), StreamError<Input>>;
+}
+
+impl<P, Input> SimpleParser<Input> for P where P: Parser<Input = SimpleStream<Input>>, Input: Stream, Input::Position: Default {
+    type Output = P::Output;
+
+    fn parse(
+        &mut self,
+        input: Input,
+    ) -> Result<(Self::Output, Input), StreamError<Input>> {
+        match self.parse_stream(input) {
+            Ok((v, state)) => Ok((v, state.into_inner())),
+            Err(error) => Err(error.into_inner()),
+        }
+    }
+}
+
 impl<'a, I, O, P: ?Sized> Parser for &'a mut P
 where
     I: Stream,
@@ -2006,7 +2130,7 @@ where
     }
 
     #[inline(always)]
-    fn add_error(&mut self, error: &mut StreamError<Self::Input>) {
+    fn add_error(&mut self, error: &mut <Self::Input as StreamOnce>::Error) {
         (**self).add_error(error)
     }
 }
@@ -2034,7 +2158,7 @@ where
     }
 
     #[inline(always)]
-    fn add_error(&mut self, error: &mut StreamError<Self::Input>) {
+    fn add_error(&mut self, error: &mut <Self::Input as StreamOnce>::Error) {
         (**self).add_error(error)
     }
 }
@@ -2116,7 +2240,7 @@ where
             Ok(item)
         } else if offset < self.offset - self.buffer.len() {
             // We have backtracked to far
-            Err(Self::Error::static_message("Backtracked to far".into()))
+            Err(I::Error::static_message("Backtracked to far".into()))
         } else {
             Ok(
                 self.buffer[self.buffer.len() - (self.offset - offset)]

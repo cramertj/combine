@@ -1,4 +1,4 @@
-use primitives::{ConsumedResult, Parser, ParsingError, Stream, StreamError};
+use primitives::{ConsumedResult, Parser, ParsingError, Stream, StreamOnce, StreamError};
 use combinator::{satisfy, skip_many, token, tokens, Expected, Satisfy, SkipMany, Token, With};
 use std::marker::PhantomData;
 
@@ -240,7 +240,7 @@ where
             .parse_lazy(input)
             .map(|_| self.0)
     }
-    fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
+    fn add_error(&mut self, errors: &mut <Self::Input as StreamOnce>::Error) {
         tokens::<_, _, I>(eq, self.0.into(), self.0.chars()).add_error(errors)
     }
 }
@@ -286,7 +286,7 @@ where
             .parse_lazy(input)
             .map(|_| self.0)
     }
-    fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
+    fn add_error(&mut self, errors: &mut <Self::Input as StreamOnce>::Error) {
         tokens::<_, _, I>(&mut self.1, self.0.into(), self.0.chars()).add_error(errors)
     }
 }
@@ -318,12 +318,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ::simple_parse;
     use primitives::{Error, ParseError, Parser};
     use state::{SourcePosition, State};
 
     #[test]
     fn space_error() {
-        let result = space().parse("");
+        let result = simple_parse(space(), "");
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().errors,
@@ -334,7 +335,7 @@ mod tests {
 
     #[test]
     fn string_consumed() {
-        let result = string("a").parse(State::new("b"));
+        let result = simple_parse(string("a"), State::new("b"));
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().position,
@@ -344,7 +345,7 @@ mod tests {
 
     #[test]
     fn string_error() {
-        let result = string("abc").parse(State::new("bc"));
+        let result = simple_parse(string("abc"), State::new("bc"));
         assert_eq!(
             result,
             Err(ParseError {

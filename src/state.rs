@@ -266,7 +266,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use primitives::Parser;
+    use primitives::{SimpleParser, Parser};
 
     #[test]
     fn test_positioner() {

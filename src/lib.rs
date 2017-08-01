@@ -156,7 +156,7 @@
 #![cfg_attr(feature = "cargo-clippy", allow(inline_always))]
 
 #[doc(inline)]
-pub use primitives::{ConsumedResult, ParseError, ParseResult, Parser, ParsingError, Positioned,
+pub use primitives::{ConsumedResult, ParseError, ParseResult, Parser, ParsingError, Positioned, SimpleParser,
                      Stream, StreamError, StreamOnce};
 
 #[doc(inline)]
@@ -200,7 +200,7 @@ macro_rules! impl_token_parser {
                       input: Self::Input) -> ConsumedResult<Self::Output, Self::Input> {
             self.0.parse_lazy(input)
         }
-        fn add_error(&mut self, errors: &mut StreamError<Self::Input>) {
+        fn add_error(&mut self, errors: &mut <Self::Input as StreamOnce>::Error) {
             self.0.add_error(errors)
         }
     }
@@ -222,7 +222,12 @@ pub mod char;
 /// Module containing stateful stream wrappers
 pub mod state;
 
-
+pub fn simple_parse<P, I>(
+    mut parser: P,
+    input: I,
+) -> Result<(P::Output, I), StreamError<I>> where P: Parser<Input = ::primitives::SimpleStream<I>>, I: Stream, I::Position: Default {
+    parser.parse(::primitives::SimpleStream(input))
+}
 
 #[cfg(test)]
 mod tests {
