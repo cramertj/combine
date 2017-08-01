@@ -17,6 +17,7 @@ pub struct Ini {
 fn property<I>(input: I) -> ParseResult<(String, String), I>
 where
     I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     (
         many1(satisfy(|c| c != '=' && c != '[' && c != ';')),
@@ -30,6 +31,7 @@ where
 fn whitespace<I>(input: I) -> ParseResult<(), I>
 where
     I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     let comment = (token(';'), skip_many(satisfy(|c| c != '\n'))).map(|_| ());
     // Wrap the `spaces().or(comment)` in `skip_many` so that it skips alternating whitespace and
@@ -40,6 +42,7 @@ where
 fn properties<I>(input: I) -> ParseResult<HashMap<String, String>, I>
 where
     I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     // After each property we skip any whitespace that followed it
     many(parser(property).skip(parser(whitespace))).parse_stream(input)
@@ -48,6 +51,7 @@ where
 fn section<I>(input: I) -> ParseResult<(String, HashMap<String, String>), I>
 where
     I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     (
         between(token('['), token(']'), many(satisfy(|c| c != ']'))),
@@ -61,6 +65,7 @@ where
 fn ini<I>(input: I) -> ParseResult<Ini, I>
 where
     I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     (
         parser(whitespace),
@@ -98,14 +103,14 @@ type=LL(1)
     section.insert(String::from("type"), String::from("LL(1)"));
     expected.sections.insert(String::from("section"), section);
 
-    let result = parser(ini).parse(text).map(|t| t.0);
+    let result = parser(ini).simple_parse(text).map(|t| t.0);
     assert_eq!(result, Ok(expected));
 }
 
 #[test]
 fn ini_error() {
     let text = "[error";
-    let result = parser(ini).parse(State::new(text)).map(|t| t.0);
+    let result = parser(ini).simple_parse(State::new(text)).map(|t| t.0);
     assert_eq!(
         result,
         Err(ParseError {

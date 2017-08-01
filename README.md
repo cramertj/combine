@@ -10,7 +10,7 @@ extern crate combine;
 use combine::{many, Parser};
 use combine::char::letter;
 
-let result = many(letter()).parse("hello world");
+let result = many(letter()).simple_parse("hello world");
 assert_eq!(result, Ok(("hello".to_string(), " world")));
 ```
 
