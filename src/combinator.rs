@@ -1,9 +1,11 @@
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 
-use primitives::{Consumed, ConsumedResult, Error, ErrorOffset, Info, ParseError, StreamError, Positioned, ParseResult,
-                 Parser, Stream, StreamOnce, TrackedError};
+use primitives::{Consumed, ConsumedResult, Error, Info, ParseError, ParseResult, Parser,
+                 Positioned, Stream, StreamError, StreamOnce, TrackedError};
 use primitives::FastResult::*;
+
+use ErrorOffset;
 
 macro_rules! impl_parser {
     ($name: ident ($first: ident, $($ty_var: ident),*), $inner_type: ty) => {
@@ -327,7 +329,11 @@ where
 ///     .parse("AbC")
 ///     .map(|x| x.0.as_str());
 /// assert_eq!(result, Ok("abc"));
-/// let result = tokens(|&l, r| (if l < r { r - l } else { l - r }) <= 2, Info::Range(&b"025"[..]), &b"025"[..])
+/// let result = tokens(
+///     |&l, r| (if l < r { r - l } else { l - r }) <= 2,
+///     Info::Range(&b"025"[..]),
+///     &b"025"[..]
+/// )
 ///     .parse(&b"123"[..])
 ///     .map(|x| x.0);
 /// assert_eq!(result, Ok(&b"025"[..]));
@@ -1720,8 +1726,8 @@ where
     }
 }
 
-/// `try(p)` behaves as `p` except it acts as if the parser hadn't consumed any input if `p` fails after
-/// consuming input.
+/// `try(p)` behaves as `p` except it acts as if the parser hadn't consumed any input if `p` fails
+/// after consuming input.
 ///
 /// ```
 /// # extern crate combine;
@@ -2230,7 +2236,7 @@ macro_rules! tuple_parser {
                         x
                     }
                 };
-                let mut offset = $h.parser_count();
+                let mut offset = $h.parser_count().0;
                 let $h = temp;
                 $(
                     current_parser += 1;
@@ -2248,7 +2254,7 @@ macro_rules! tuple_parser {
                                 add_error!(err);
                                 return ConsumedErr(err.error)
                             } else {
-                                err.offset = offset;
+                                err.offset = ErrorOffset(offset);
                                 return EmptyErr(err)
                             }
                         }
@@ -2258,7 +2264,7 @@ macro_rules! tuple_parser {
                             x
                         }
                     };
-                    offset = offset.saturating_add($id.parser_count());
+                    offset = offset.saturating_add($id.parser_count().0);
                     let $id = temp;
                 )+
                 if first_empty_parser != 0 {
@@ -2271,23 +2277,25 @@ macro_rules! tuple_parser {
             #[inline(always)]
             fn parser_count(&self) -> ErrorOffset {
                 let (ref $h, $(ref $id),+) = *self;
-                $h.parser_count() $( + $id.parser_count())+
+                ErrorOffset($h.parser_count().0 $( + $id.parser_count().0)+)
             }
 
             #[inline(always)]
             fn add_error(&mut self, errors: &mut TrackedError<StreamError<Self::Input>>) {
                 let (ref mut $h, $(ref mut $id),+) = *self;
                 $h.add_error(errors);
-                if errors.offset == 0 {
+                if errors.offset.0 == 0 {
                     return;
                 }
-                errors.offset = errors.offset.saturating_sub($h.parser_count());
+                errors.offset = ErrorOffset(errors.offset.0.saturating_sub($h.parser_count().0));
                 $(
                     $id.add_error(errors);
-                    if errors.offset == 0 {
+                    if errors.offset.0 == 0 {
                         return;
                     }
-                    errors.offset = errors.offset.saturating_sub($id.parser_count());
+                    errors.offset = ErrorOffset(
+                        errors.offset.0.saturating_sub($id.parser_count().0)
+                    );
                 )*
             }
         }
@@ -2379,7 +2387,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use primitives::{Error, StreamError, Parser};
+    use primitives::{Error, Parser, StreamError};
     use char::{char, digit, letter};
     use state::{SourcePosition, State};
 
@@ -2392,7 +2400,8 @@ mod tests {
     #[test]
     fn sep_by_consumed_error() {
         let mut parser2 = sep_by((letter(), letter()), token(','));
-        let result_err: Result<(Vec<(char, char)>, &str), StreamError<&str>> = parser2.parse("a,bc");
+        let result_err: Result<(Vec<(char, char)>, &str), StreamError<&str>> =
+            parser2.parse("a,bc");
         assert!(result_err.is_err());
     }
 

@@ -7,6 +7,7 @@ use std::io::{Bytes, Read};
 
 use self::FastResult::*;
 
+use ErrorOffset;
 use combinator::{and_then, expected, flat_map, map, message, or, skip, then, with, AndThen,
                  Expected, FlatMap, Iter, Map, Message, Or, Skip, Then, With};
 
@@ -14,10 +15,14 @@ use combinator::{and_then, expected, flat_map, map, message, or, skip, then, wit
 macro_rules! ctry {
     ($result: expr) => {
         match $result {
-            $crate::primitives::FastResult::ConsumedOk((x, i)) => (x, $crate::primitives::Consumed::Consumed(i)),
-            $crate::primitives::FastResult::EmptyOk((x, i)) => (x, $crate::primitives::Consumed::Empty(i)),
-            $crate::primitives::FastResult::ConsumedErr(err) => return $crate::primitives::FastResult::ConsumedErr(err.into()),
-            $crate::primitives::FastResult::EmptyErr(err) => return $crate::primitives::FastResult::EmptyErr(err.into()),
+            $crate::primitives::FastResult::ConsumedOk((x, i)) =>
+                (x, $crate::primitives::Consumed::Consumed(i)),
+            $crate::primitives::FastResult::EmptyOk((x, i)) =>
+                (x, $crate::primitives::Consumed::Empty(i)),
+            $crate::primitives::FastResult::ConsumedErr(err) =>
+                return $crate::primitives::FastResult::ConsumedErr(err.into()),
+            $crate::primitives::FastResult::EmptyErr(err) =>
+                return $crate::primitives::FastResult::EmptyErr(err.into()),
         }
     }
 }
@@ -1012,9 +1017,7 @@ impl<R: Read> StreamOnce for ReadStream<R> {
     #[inline]
     fn uncons(&mut self) -> Result<u8, Error<u8, u8>> {
         match self.bytes.next() {
-            Some(Ok(b)) => {
-                Ok(b)
-            }
+            Some(Ok(b)) => Ok(b),
             Some(Err(err)) => Err(err.into()),
             None => Err(Error::end_of_input()),
         }
@@ -1062,11 +1065,14 @@ where
     ReadStream::new(read)
 }
 
-pub type ErrorOffset = u8;
-
+/// Error wrapper which lets parsers track which parser in a sequence of sub-parsers has emitted
+/// the error. `TrackedError::from` can be used to construct this and it should otherwise be
+/// ignored outside of combine.
 #[derive(Clone, PartialEq, Debug, Copy)]
 pub struct TrackedError<E> {
+    /// The error returned
     pub error: E,
+    #[doc(hidden)]
     pub offset: ErrorOffset,
 }
 
@@ -1074,7 +1080,7 @@ impl<E> From<E> for TrackedError<E> {
     fn from(error: E) -> Self {
         TrackedError {
             error: error,
-            offset: 0,
+            offset: ErrorOffset(0),
         }
     }
 }
@@ -1144,7 +1150,7 @@ impl<T, E> Into<Result<Consumed<T>, Consumed<TrackedError<E>>>> for FastResult<T
     fn into(self) -> Result<Consumed<T>, Consumed<TrackedError<E>>> {
         match self {
             ConsumedOk(t) => Ok(Consumed::Consumed(t)),
-            EmptyOk(t) => Ok(Consumed::Empty(t)), 
+            EmptyOk(t) => Ok(Consumed::Empty(t)),
             ConsumedErr(e) => Err(Consumed::Consumed(e.into())),
             EmptyErr(e) => Err(Consumed::Empty(e)),
         }
@@ -1159,7 +1165,7 @@ where
         use self::FastResult::*;
         match self {
             ConsumedOk((t, i)) => Ok((t, Consumed::Consumed(i))),
-            EmptyOk((t, i)) => Ok((t, Consumed::Empty(i))), 
+            EmptyOk((t, i)) => Ok((t, Consumed::Empty(i))),
             ConsumedErr(e) => Err(Consumed::Consumed(e.into())),
             EmptyErr(e) => Err(Consumed::Empty(e)),
         }
@@ -1287,8 +1293,11 @@ pub trait Parser {
     fn add_error(&mut self, _error: &mut TrackedError<StreamError<Self::Input>>) {}
 
     /// Returns how many parsers this parser contains
+    ///
+    /// This should not be implemented explicitly outside of combine.
+    #[doc(hidden)]
     fn parser_count(&self) -> ErrorOffset {
-        1
+        ErrorOffset(1)
     }
 
     /// Borrows a parser instead of consuming it.
@@ -1585,8 +1594,8 @@ pub trait Parser {
         and_then(self, f)
     }
 
-    /// Creates an iterator from a parser and a state. Can be used as an alternative to [`many`] when
-    /// collecting directly into a `FromIterator` type is not desirable.
+    /// Creates an iterator from a parser and a state. Can be used as an alternative to [`many`]
+    /// when collecting directly into a `FromIterator` type is not desirable.
     ///
     /// ```
     /// # extern crate combine;
@@ -1622,7 +1631,10 @@ pub trait Parser {
     /// # extern crate combine;
     /// # use combine::*;
     /// # fn main() {
-    /// fn test<'input, F>(c: char, f: F) ->  Box<Parser<Input = &'input str, Output = (char, char)>>
+    /// fn test<'input, F>(
+    ///     c: char,
+    ///     f: F)
+    ///     -> Box<Parser<Input = &'input str, Output = (char, char)>>
     ///     where F: FnMut(char) -> bool + 'static
     /// {
     ///     (token(c), satisfy(f)).boxed()
@@ -1824,8 +1836,8 @@ where
 
     /// Creates a `BufferedStreamRef` which implements `Stream`.
     ///
-    /// `BufferedStreamRef` always implement `Stream` allowing one-shot streams to used as if it could
-    /// be used multiple times.
+    /// `BufferedStreamRef` always implement `Stream` allowing one-shot streams to used as if it
+    /// could be used multiple times.
     pub fn as_stream(&self) -> BufferedStreamRef<I> {
         BufferedStreamRef {
             offset: 0,

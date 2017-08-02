@@ -6,7 +6,6 @@ use self::ascii::AsciiChar;
 
 use combinator::{satisfy, skip_many, token, tokens, Expected, Satisfy, SkipMany, Token, With};
 use primitives::{ConsumedResult, Info, Parser, Stream, StreamError, TrackedError};
-use range::take;
 
 /// Parses a byteacter and succeeds if the byteacter is equal to `c`.
 ///
@@ -369,6 +368,7 @@ where
 pub mod num {
     use super::*;
     use primitives::RangeStream;
+    use range::take;
 
     use byteorder::{ByteOrder, BE, LE};
 
