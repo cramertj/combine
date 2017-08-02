@@ -5,7 +5,7 @@ extern crate combine;
 
 use combine::combinator::FnParser;
 use combine::char::{char, digit};
-use combine::{choice, many, optional, parser, ParseResult, Parser, Stream};
+use combine::{choice, many, optional, parser, ParseResult, Parser, Stream, SimpleParser, ParsingError};
 
 type FnPtrParser<O, I> = FnParser<I, fn(I) -> ParseResult<O, I>>;
 
@@ -42,10 +42,12 @@ fn two_digits_to_int((x, y): (char, char)) -> i32 {
 fn two_digits<I>() -> FnPtrParser<i32, I>
 where
     I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     fn two_digits_<I>(input: I) -> ParseResult<i32, I>
     where
         I: Stream<Item = char>,
+        I::Error: ParsingError<I::Item, I::Range, I::Position>,
     {
         (digit(), digit())
             .map(two_digits_to_int)
@@ -62,6 +64,7 @@ where
 fn time_zone<I>(input: I) -> ParseResult<i32, I>
 where
     I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     let utc = char('Z').map(|_| 0);
     let offset = (
@@ -85,6 +88,7 @@ where
 fn date<I>(input: I) -> ParseResult<Date, I>
 where
     I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     (
         many::<String, _>(digit()),
@@ -108,6 +112,7 @@ where
 fn time<I>(input: I) -> ParseResult<Time, I>
 where
     I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     (
         two_digits(),
@@ -133,6 +138,7 @@ where
 fn date_time<I>(input: I) -> ParseResult<DateTime, I>
 where
     I: Stream<Item = char>,
+    I::Error: ParsingError<I::Item, I::Range, I::Position>,
 {
     (parser(date), char('T'), parser(time))
         .map(|(date, _, time)| {

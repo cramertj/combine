@@ -1,6 +1,5 @@
-
 extern crate combine;
-use combine::{many, Parser};
+use combine::{many, SimpleParser};
 use combine::char::letter;
 
 #[test]

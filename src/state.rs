@@ -1,6 +1,6 @@
 use std::fmt;
 
-use primitives::{Error, IteratorStream, ParsingError, Positioned, RangeStream, ReadStream, SliceStream,
+use primitives::{IteratorStream, ParsingError, Positioned, RangeStream, ReadStream, SliceStream,
                  StreamOnce};
 
 /// Trait for tracking the current position of a `Stream`.
@@ -266,7 +266,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use primitives::{SimpleParser, Parser};
+    use primitives::SimpleParser;
 
     #[test]
     fn test_positioner() {

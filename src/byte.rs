@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use self::ascii::AsciiChar;
 
 use combinator::{satisfy, skip_many, token, tokens, Expected, Satisfy, SkipMany, Token, With};
-use primitives::{ConsumedResult, Parser, ParsingError, SimpleInfo, Stream, StreamOnce, StreamError};
+use primitives::{ConsumedResult, Parser, ParsingError, SimpleInfo, Stream, StreamOnce};
 
 /// Parses a character and succeeds if the character is equal to `c`.
 ///

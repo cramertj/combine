@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use primitives::{ConsumedResult, Error, SimpleInfo, Info, Parser, ParsingError, RangeStream, StreamError,
+use primitives::{ConsumedResult, SimpleInfo, Parser, ParsingError, RangeStream,
                  StreamOnce};
 use primitives::FastResult::*;
 
@@ -117,7 +117,7 @@ where
         let position = input.position();
         match input.uncons_range(self.0) {
             Ok(x) => ConsumedOk((x, input)),
-            Err(err) => EmptyErr(err),
+            Err(err) => EmptyErr(I::Error::empty(position).merge(err)),
         }
     }
 }
@@ -311,7 +311,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use primitives::{Parser, SimpleParser};
+    use primitives::SimpleParser;
 
     #[test]
     fn take_while_test() {

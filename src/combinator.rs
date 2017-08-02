@@ -1,6 +1,6 @@
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-use primitives::{Consumed, ConsumedResult, Error, ParseError, ParseResult, Parser, ParsingError,
+use primitives::{Consumed, ConsumedResult, ParseResult, Parser, ParsingError,
                  Positioned, SimpleInfo, Stream, StreamError, StreamOnce};
 use primitives::FastResult::*;
 

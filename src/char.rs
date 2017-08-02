@@ -1,4 +1,4 @@
-use primitives::{ConsumedResult, Parser, ParsingError, Stream, StreamOnce, StreamError};
+use primitives::{ConsumedResult, Parser, ParsingError, Stream, StreamOnce};
 use combinator::{satisfy, skip_many, token, tokens, Expected, Satisfy, SkipMany, Token, With};
 use std::marker::PhantomData;
 
@@ -319,7 +319,7 @@ where
 mod tests {
     use super::*;
     use ::simple_parse;
-    use primitives::{Error, ParseError, Parser};
+    use primitives::{Error, ParseError};
     use state::{SourcePosition, State};
 
     #[test]

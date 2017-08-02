@@ -2,7 +2,7 @@
 extern crate combine;
 use combine::primitives::{BufferedStream, Error};
 use combine::char::{char, digit, spaces, string};
-use combine::{choice, many, sep_by, try, Parser, Positioned, many1};
+use combine::{choice, many, sep_by, try, Parser, Positioned, many1, SimpleParser};
 use combine::state::State;
 
 #[allow(deprecated)]

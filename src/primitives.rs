@@ -266,8 +266,8 @@ where
     fn empty(pos: Position) -> Self {
         ParseError::empty(pos)
     }
-    fn merge(mut self, other: Self) -> Self {
-        self.merge(other)
+    fn merge(self, other: Self) -> Self {
+        ParseError::merge(self, other)
     }
     fn unexpected_token(token: Item) -> Self {
         ParseError::new(Position::default(), Error::Unexpected(Info::Token(token)))
@@ -713,7 +713,7 @@ impl<P, I, R> ParseError<P, I, R> {
     /// Merges two `ParseError`s. If they exist at the same position the errors of `other` are
     /// added to `self` (using `add_error` to skip duplicates). If they are not at the same
     /// position the error furthest ahead are returned, ignoring the other `ParseError`.
-    pub fn merge(&mut self, mut other: ParseError<P, I, R>) -> ParseError<P, I, R>
+    pub fn merge(mut self, mut other: ParseError<P, I, R>) -> ParseError<P, I, R>
     where
         P: Ord,
         I: PartialEq,
@@ -723,16 +723,12 @@ impl<P, I, R> ParseError<P, I, R> {
         // Only keep the errors which occurred after consuming the most amount of data
         match self.position.cmp(&other.position) {
             Ordering::Less => other,
-            Ordering::Greater => {
-                ::std::mem::swap(self, &mut other);
-                other
-            }
+            Ordering::Greater => self,
             Ordering::Equal => {
                 for message in other.errors.drain(..) {
                     self.add_error(message);
                 }
-                ::std::mem::swap(self, &mut other);
-                other
+                self
             }
         }
     }
@@ -916,41 +912,41 @@ impl<Item, Range, Position> ParsingError<Item, Range, Position> for UnexpectedPa
     fn empty(_: Position) -> Self {
         UnexpectedParse::Unexpected
     }
-    fn unexpected_token(_token: Item) -> Self {
+    fn unexpected_token(_: Item) -> Self {
         UnexpectedParse::Unexpected
     }
-    fn unexpected_range(_token: Range) -> Self {
+    fn unexpected_range(_: Range) -> Self {
         UnexpectedParse::Unexpected
     }
-    fn unexpected_message<T>(_msg: T) -> Self
+    fn unexpected_message<T>(_: T) -> Self
     where
         T: fmt::Display,
     {
         UnexpectedParse::Unexpected
     }
 
-    fn expected_token(token: Item) -> Self {
+    fn expected_token(_: Item) -> Self {
         UnexpectedParse::Unexpected
     }
-    fn expected_range(token: Range) -> Self {
+    fn expected_range(_: Range) -> Self {
         UnexpectedParse::Unexpected
     }
-    fn expected_message<T>(_msg: T) -> Self
+    fn expected_message<T>(_: T) -> Self
     where
         T: fmt::Display,
     {
         UnexpectedParse::Unexpected
     }
-    fn message<T>(_msg: T) -> Self
+    fn message<T>(_: T) -> Self
     where
         T: fmt::Display,
     {
         UnexpectedParse::Unexpected
     }
-    fn message_token(token: Item) -> Self {
+    fn message_token(_: Item) -> Self {
         UnexpectedParse::Unexpected
     }
-    fn message_range(token: Range) -> Self {
+    fn message_range(_: Range) -> Self {
         UnexpectedParse::Unexpected
     }
 
@@ -1067,7 +1063,7 @@ where
     I: Stream,
 {
     let position = input.position();
-    let x = try!(input.uncons().map_err(|err| Consumed::Empty(err)));
+    let x = try!(input.uncons().map_err(|err| Consumed::Empty(I::Error::empty(position).merge(err))));
     Ok((x, Consumed::Consumed(input)))
 }
 
@@ -1236,10 +1232,10 @@ impl<Item, Range, Position> ParsingError<Item, Range, Position> for StringStream
     fn empty(_: Position) -> Self {
         StringStreamError::UnexpectedParse
     }
-    fn unexpected_token(_token: Item) -> Self {
+    fn unexpected_token(_: Item) -> Self {
         StringStreamError::UnexpectedParse
     }
-    fn unexpected_range(_token: Range) -> Self {
+    fn unexpected_range(_: Range) -> Self {
         StringStreamError::UnexpectedParse
     }
     fn unexpected_message<T>(_msg: T) -> Self
@@ -1249,28 +1245,28 @@ impl<Item, Range, Position> ParsingError<Item, Range, Position> for StringStream
         StringStreamError::UnexpectedParse
     }
 
-    fn expected_token(token: Item) -> Self {
+    fn expected_token(_: Item) -> Self {
         StringStreamError::UnexpectedParse
     }
-    fn expected_range(token: Range) -> Self {
+    fn expected_range(_: Range) -> Self {
         StringStreamError::UnexpectedParse
     }
-    fn expected_message<T>(msg: T) -> Self
+    fn expected_message<T>(_: T) -> Self
     where
         T: fmt::Display,
     {
         StringStreamError::UnexpectedParse
     }
-    fn message<T>(msg: T) -> Self
+    fn message<T>(_: T) -> Self
     where
         T: fmt::Display,
     {
         StringStreamError::UnexpectedParse
     }
-    fn message_token(token: Item) -> Self {
+    fn message_token(_: Item) -> Self {
         StringStreamError::UnexpectedParse
     }
-    fn message_range(token: Range) -> Self {
+    fn message_range(_: Range) -> Self {
         StringStreamError::UnexpectedParse
     }
     fn into_other<T>(self) -> T

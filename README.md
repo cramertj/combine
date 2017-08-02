@@ -7,7 +7,7 @@ An implementation of parser combinators for Rust, inspired by the Haskell librar
 
 ```rust
 extern crate combine;
-use combine::{many, Parser};
+use combine::{many, Parser, SimpleParser};
 use combine::char::letter;
 
 let result = many(letter()).parse("hello world");
