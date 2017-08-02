@@ -39,12 +39,12 @@
 //!
 //! * [`combinator`] contains the before mentioned parser combinators and thus contains the main
 //! building blocks for creating any sort of complex parsers. It consists of free functions such
-//! as [`many`] and [`satisfy`] as well as a few methods on the [`Parser`] trait which provides a few
-//! functions such as [`or`] which are more natural to use method calls.
+//! as [`many`] and [`satisfy`] as well as a few methods on the [`Parser`] trait which provides a
+//! few functions such as [`or`] which are more natural to use method calls.
 //!
-//! * [`primitives`] contains the [`Parser`] and [`Stream`] traits which are the core abstractions in
-//! combine as well as various structs dealing with input streams and errors. You usually only need
-//! to use this module if you want more control over parsing and input streams.
+//! * [`primitives`] contains the [`Parser`] and [`Stream`] traits which are the core abstractions
+//! in combine as well as various structs dealing with input streams and errors. You usually only
+//! need to use this module if you want more control over parsing and input streams.
 //!
 //! * [`char`] and [`byte`] provides parsers specifically working with streams of characters
 //! (`char`) and bytes (`u8`) respectively. As a few examples it has parsers for accepting digits,
@@ -79,11 +79,11 @@
 //! ```
 //!
 //! If we need a parser that is mutually recursive we can define a free function which internally
-//! can in turn be used as a parser by using the [`parser`][fn parser] function which turns a function with the
-//! correct signature into a parser. In this case we define `expr` to work on any type of [`Stream`]
-//! which is combine's way of abstracting over different data sources such as array slices, string
-//! slices, iterators etc. If instead you would only need to parse string already in memory you
-//! could define `expr` as `fn expr(input: &str) -> ParseResult<Expr, &str>`
+//! can in turn be used as a parser by using the [`parser`][fn parser] function which turns a
+//! function with the correct signature into a parser. In this case we define `expr` to work on any
+//! type of [`Stream`] which is combine's way of abstracting over different data sources such as
+//! array slices, string slices, iterators etc. If instead you would only need to parse string
+//! already in memory you could define `expr` as `fn expr(input: &str) -> ParseResult<Expr, &str>`
 //!
 //! ```
 //! extern crate combine;
@@ -218,6 +218,9 @@ pub mod char;
 pub mod state;
 
 
+#[doc(hidden)]
+#[derive(Clone, PartialEq, Debug, Copy)]
+pub struct ErrorOffset(u8);
 
 #[cfg(test)]
 mod tests {

@@ -7,8 +7,9 @@ use std::io::Read;
 use std::fs::File;
 use std::path::Path;
 
-use pc::primitives::{BufferedStream, Consumed, IteratorStream, ParseError, ParseResult, Parser, Stream};
-use pc::state::{State, SourcePosition};
+use pc::primitives::{BufferedStream, Consumed, IteratorStream, ParseError, ParseResult, Parser,
+                     Stream};
+use pc::state::{SourcePosition, State};
 use pc::combinator::{any, between, choice, many, optional, parser, satisfy, sep_by, Expected,
                      FnParser, Skip, many1};
 use pc::char::{char, digit, spaces, string, Spaces};
@@ -116,10 +117,9 @@ where
         });
         match c {
             '\\' => input.combine(|input| back_slash_char.parse_stream(input)),
-            '"' => Err(Consumed::Empty(ParseError::from_errors(
-                input.into_inner().position(),
-                Vec::new(),
-            ).into())),
+            '"' => Err(Consumed::Empty(
+                ParseError::from_errors(input.into_inner().position(), Vec::new()).into(),
+            )),
             _ => Ok((c, input)),
         }
     }
@@ -239,7 +239,10 @@ fn bench_buffered_json(bencher: &mut ::test::Bencher) {
     bencher.iter(|| {
         let buffer = BufferedStream::new(State::new(IteratorStream::new(data.chars())), 1);
         let mut parser = Json::value();
-        match parser.parse(State::with_positioner(buffer.as_stream(), SourcePosition::default())) {
+        match parser.parse(State::with_positioner(
+            buffer.as_stream(),
+            SourcePosition::default(),
+        )) {
             Ok((Value::Array(v), _)) => {
                 ::test::black_box(v);
             }
