@@ -250,6 +250,7 @@ impl<Item, Range, Position> ParsingError<Item, Range, Position> for Error<Item, 
                         Info::Borrowed(x) => T::expected_static_message(x),
                         Info::Owned(x) => T::expected_message(x),
                     },
+                Error::Other(err) => T::message(err),
             }
         }
 }
@@ -1161,7 +1162,7 @@ impl<'a> RangeStream for &'a str {
                 Err(StringStreamError::CharacterBoundary)
             }
         } else {
-            Err(StringStreamError::end_of_input())
+            Err(StringStreamError::Eoi)
         }
     }
 
@@ -1196,7 +1197,7 @@ where
             *self = remaining;
             Ok(result)
         } else {
-            Err(Self::Error::end_of_input())
+            Err(UnexpectedParse::Eoi)
         }
     }
 
@@ -1386,7 +1387,7 @@ where
             self.0 = rest;
             Ok(range)
         } else {
-            Err(Self::Error::end_of_input())
+            Err(UnexpectedParse::Eoi)
         }
     }
 

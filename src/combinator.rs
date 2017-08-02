@@ -271,7 +271,7 @@ where
                     if !(self.cmp)(c, other.clone()) {
                         return if consumed {
                             let mut errors = <Self::Input as StreamOnce>::Error::unexpected_token(other);
-                            errors.merge(<Self::Input as StreamOnce>::Error::expected(self.expected.clone()));
+                            errors = errors.merge(<Self::Input as StreamOnce>::Error::expected(self.expected.clone()));
                             ConsumedErr(errors)
                         } else {
                             EmptyErr(<Self::Input as StreamOnce>::Error::empty(start))
@@ -550,7 +550,7 @@ where
             }
         }
         EmptyErr(match empty_err {
-            None => I::Error::empty(input.position()).merge(I::Error::message("parser choice is empty".into())),
+            None => I::Error::empty(input.position()).merge(I::Error::static_message("parser choice is empty")),
             Some(err) => err,
         })
     }
