@@ -781,11 +781,7 @@ where
         EmptyErr(<Self::Input as StreamOnce>::Error::empty(input.position()))
     }
     fn add_error(&mut self, error: &mut <Self::Input as StreamOnce>::Error) {
-        error.errors.push(match self.0 {
-            SimpleInfo::Token(b) => <Self::Input as StreamOnce>::Error::unexpected_token(b.clone()),
-            SimpleInfo::Range(b) => <Self::Input as StreamOnce>::Error::unexpected_range(b.clone()),
-            SimpleInfo::Borrowed(b) => <Self::Input as StreamOnce>::Error::unexpected_static_message(b),
-        });
+        error.add_unexpected(self.0.clone());
     }
 }
 /// Always fails with `message` as an unexpected error.
@@ -870,10 +866,10 @@ impl_parser! { NotFollowedBy(P,),
 pub fn not_followed_by<P>(parser: P) -> NotFollowedBy<P>
 where
     P: Parser,
-    P::Output: ::std::fmt::Display,
+    P::Output: Into<SimpleInfo<<P::Input as StreamOnce>::Item, <P::Input as StreamOnce>::Range>>,
 {
-    fn f<T: ::std::fmt::Display, I: Stream>(t: T) -> Unexpected<I> {
-        unexpected(format!("{}", t))
+    fn f<T, I: Stream>(t: T) -> Unexpected<I> where T: Into<SimpleInfo<I::Item, I::Range>> {
+        unexpected(t)
     }
     let f: fn(P::Output) -> Unexpected<P::Input> = f;
     NotFollowedBy(try(parser).then(f).or(value(())))
@@ -2140,7 +2136,7 @@ pub fn and_then<P, F, O, E>(p: P, f: F) -> AndThen<P, F>
 where
     P: Parser,
     F: FnMut(P::Output) -> Result<O, E>,
-    E: Into<Error<<P::Input as StreamOnce>::Item, <P::Input as StreamOnce>::Range>>,
+    E: Into<<P::Input as StreamOnce>::Error>,
 {
     AndThen(p, f)
 }

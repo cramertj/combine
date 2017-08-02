@@ -226,7 +226,7 @@ pub fn simple_parse<P, I>(
     mut parser: P,
     input: I,
 ) -> Result<(P::Output, I), StreamError<I>> where P: Parser<Input = ::primitives::SimpleStream<I>>, I: Stream, I::Position: Default {
-    parser.parse(::primitives::SimpleStream(input))
+    parser.parse(input)
 }
 
 #[cfg(test)]
@@ -391,7 +391,7 @@ mod tests {
     }
 
 
-    fn follow(input: State<&str, SourcePosition>) -> ParseResult<(), State<&str, SourcePosition>> {
+    fn follow<I>(input: I) -> ParseResult<(), I> where I: Stream<Item = char, Error = StreamError<I>>, I::Position: Default {
         match input.clone().uncons() {
             Ok(c) => if c.is_alphanumeric() {
                 let e = Error::Unexpected(c.into());
@@ -460,7 +460,7 @@ mod tests {
 
     #[test]
     fn unsized_parser() {
-        let mut parser: Box<Parser<Input = &str, Output = char>> = Box::new(digit());
+        let mut parser: Box<Parser<Input = _, Output = char>> = Box::new(digit());
         let borrow_parser = &mut *parser;
         assert_eq!(borrow_parser.parse("1"), Ok(('1', "")));
     }
@@ -501,7 +501,7 @@ mod tests {
             }
         }
         let result: Result<((), _), ParseError<_, char, &str>> =
-            string("abc").and_then(|_| Err(Error)).parse("abc");
+            SimpleParser::parse(&mut string("abc").and_then(|_| Err(ParseError::new(Default::default(), Error.into()))), "abc");
         assert!(result.is_err());
         // Test that ParseError can be coerced to a StdError
         let _ = result.map_err(|err| {

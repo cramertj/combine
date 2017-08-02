@@ -1023,9 +1023,9 @@ where
     fn uncons(&mut self) -> Result<Self::Item, Self::Error> {
         match self.0.uncons() {
             Ok(t) => Ok(t),
-            Err(err) => Err(StreamError::new(
-                self.0.position(),
-                Error::Unexpected(err.into_other()),
+            Err(err) => Err(ParseError::new(
+                self.position(),
+                err.into_other(),
             )),
         }
     }
@@ -1037,7 +1037,7 @@ where
     S::Position: Default
 {
     fn uncons_range(&mut self, size: usize) -> Result<Self::Range, Self::Error> {
-        self.0.uncons_range(size).map_err(Self::Error::into_other)
+        self.0.uncons_range(size).map_err(S::Error::into_other)
     }
 
     fn uncons_while<F>(&mut self, f: F) -> Result<Self::Range, Self::Error>
@@ -1046,7 +1046,7 @@ where
     {
 
         self.0.uncons_while(f)
-        .map_err(Self::Error::into_other)
+        .map_err(S::Error::into_other)
     }
 
     fn distance(&self, end: &Self) -> usize {
@@ -1161,7 +1161,7 @@ impl<'a> RangeStream for &'a str {
                 Err(StringStreamError::CharacterBoundary)
             }
         } else {
-            Err(Self::Error::end_of_input())
+            Err(StringStreamError::end_of_input())
         }
     }
 
@@ -1305,7 +1305,7 @@ impl<'a> StreamOnce for &'a str {
 
 impl<'a, T> Positioned for &'a [T]
 where
-    Self: StreamOnce,
+    T: Clone + PartialEq,
 {
     #[inline(always)]
     fn position(&self) -> Self::Position {
@@ -2017,7 +2017,7 @@ pub trait Parser {
     where
         Self: Sized,
         F: FnMut(Self::Output) -> Result<O, E>,
-        E: Into<Error<<Self::Input as StreamOnce>::Item, <Self::Input as StreamOnce>::Range>>,
+        E: Into<<Self::Input as StreamOnce>::Error>,
     {
         and_then(self, f)
     }
@@ -2092,15 +2092,15 @@ pub trait SimpleParser<Input> where Input: Stream {
     ) -> Result<(Self::Output, Input), StreamError<Input>>;
 }
 
-impl<P, Input> SimpleParser<Input> for P where P: Parser<Input = SimpleStream<Input>>, Input: Stream, Input::Position: Default {
+impl<P, Input> SimpleParser<Input> for P where P: ?Sized + Parser<Input = SimpleStream<Input>>, Input: Stream, Input::Position: Default {
     type Output = P::Output;
 
     fn parse(
         &mut self,
         input: Input,
     ) -> Result<(Self::Output, Input), StreamError<Input>> {
-        match self.parse_stream(input) {
-            Ok((v, state)) => Ok((v, state.into_inner())),
+        match self.parse_stream(SimpleStream(input)) {
+            Ok((v, state)) => Ok((v, state.into_inner().0)),
             Err(error) => Err(error.into_inner()),
         }
     }
@@ -2333,7 +2333,7 @@ where
     type Item = I::Item;
     type Range = I::Range;
     type Position = I::Position;
-    type Error = Error<I::Item, I::Range>;
+    type Error = I::Error;
 
     #[inline]
     fn uncons(&mut self) -> Result<I::Item, Self::Error> {
