@@ -1041,7 +1041,7 @@ impl<E> From<E> for TrackedError<E> {
     fn from(error: E) -> Self {
         TrackedError {
             error: error,
-            offset: ErrorOffset(0),
+            offset: ErrorOffset(1),
         }
     }
 }

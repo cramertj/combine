@@ -215,7 +215,7 @@ pub mod state;
 
 
 #[doc(hidden)]
-#[derive(Clone, PartialEq, Debug, Copy)]
+#[derive(Clone, PartialOrd, PartialEq, Debug, Copy)]
 pub struct ErrorOffset(u8);
 
 #[cfg(test)]
