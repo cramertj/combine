@@ -415,6 +415,9 @@ macro_rules! choice {
     ($first : expr) => {
         $first
     };
+    ($first : expr, $second: expr, $third: expr, $($rest : expr),+) => {
+        choice(($first, $second, $third)).or(choice!($($rest),+))
+    };
     ($first : expr, $($rest : expr),+) => {
         $first.or(choice!($($rest),+))
     }
@@ -478,7 +481,7 @@ macro_rules! tuple_choice_parser_inner {
     }
 }
 
-tuple_choice_parser!(A B C D E F G H I J K L);
+tuple_choice_parser!(A B C D E F G H I J K L M N O P Q R S T U V X Y Z);
 
 macro_rules! array_choice_parser {
     ($($t: tt)+) => {
@@ -2307,6 +2310,12 @@ mod tests {
     use primitives::{Error, ParseError, Parser, Positioner, SourcePosition, State};
     use char::{char, digit, letter};
 
+    #[test]
+    fn choice_empty() {
+        let mut parser = choice::<&mut [Token<&str>]>(&mut []);
+        let result_err = parser.parse("a");
+        assert!(result_err.is_err());
+    }
     #[test]
     fn sep_by_consumed_error() {
         let mut parser2 = sep_by((letter(), letter()), token(','));
