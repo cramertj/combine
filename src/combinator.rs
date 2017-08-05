@@ -431,6 +431,21 @@ pub trait ChoiceParser {
     fn add_error_choice(&mut self, error: &mut StreamError<Self::Input>);
 }
 
+impl<'a, P> ChoiceParser for &'a mut P
+where
+    P: ?Sized + ChoiceParser,
+{
+    type Input = P::Input;
+    type Output = P::Output;
+
+    fn parse_choice(&mut self, input: Self::Input) -> ConsumedResult<Self::Output, Self::Input> {
+        (**self).parse_choice(input)
+    }
+    fn add_error_choice(&mut self, error: &mut StreamError<Self::Input>) {
+        (**self).add_error_choice(error)
+    }
+}
+
 macro_rules! tuple_choice_parser {
     ($head: ident) => {
     };
@@ -442,13 +457,46 @@ macro_rules! tuple_choice_parser {
 
 macro_rules! tuple_choice_parser_inner {
     ($($id: ident)+) => {
+        #[allow(non_snake_case)]
+        impl<Input, Output $(,$id)+> ChoiceParser for ($($id),+)
+        where
+            Input: Stream,
+            $($id: Parser<Input = Input, Output = Output>),+
+        {
+            type Input = Input;
+            type Output = Output;
+            #[inline]
+            fn parse_choice(&mut self, input: Self::Input) -> ConsumedResult<Self::Output, Self::Input> {
+                let ($(ref mut $id),+) = *self;
+                choice!($($id),+).parse_lazy(input)
+            }
+            fn add_error_choice(&mut self, error: &mut StreamError<Self::Input>) {
+                let ($(ref mut $id),+) = *self;
+                choice!($($id),+).add_error(error)
+            }
+        }
     }
 }
 
-tuple_choice_parser!(A B C D E F G H I J K L M N O P Q R S T U V X Y Z);
 
 macro_rules! array_choice_parser {
     ($($t: tt)+) => {
+        $(
+        impl<P> ChoiceParser for [P; $t]
+        where
+            P: Parser,
+        {
+            type Input = P::Input;
+            type Output = P::Output;
+
+            fn parse_choice(&mut self, input: Self::Input) -> ConsumedResult<Self::Output, Self::Input> {
+                self[..].parse_choice(input)
+            }
+            fn add_error_choice(&mut self, error: &mut StreamError<Self::Input>) {
+                self[..].add_error_choice(error)
+            }
+        }
+        )+
     };
 }
 
@@ -475,6 +523,43 @@ where
 
     fn add_error(&mut self, error: &mut StreamError<Self::Input>) {
         self.0.add_error_choice(error)
+    }
+}
+
+impl<I, O, P> ChoiceParser for [P]
+where
+    I: Stream,
+    P: Parser<Input = I, Output = O>,
+{
+    type Input = I;
+    type Output = O;
+    #[inline]
+    fn parse_choice(&mut self, input: I) -> ConsumedResult<O, I> {
+        let mut empty_err = None;
+        for p in self {
+            match p.parse_lazy(input.clone()) {
+                consumed_err @ ConsumedErr(_) => return consumed_err,
+                EmptyErr(err) => {
+                    empty_err = match empty_err {
+                        None => Some(err),
+                        Some(prev_err) => Some(prev_err.merge(err)),
+                    };
+                }
+                ok @ ConsumedOk(_) | ok @ EmptyOk(_) => return ok,
+            }
+        }
+        EmptyErr(match empty_err {
+            None => ParseError::new(
+                input.position(),
+                Error::Message("parser choice is empty".into()),
+            ),
+            Some(err) => err,
+        })
+    }
+    fn add_error_choice(&mut self, error: &mut StreamError<Self::Input>) {
+        for p in self {
+            p.add_error(error);
+        }
     }
 }
 
