@@ -446,15 +446,6 @@ where
     }
 }
 
-macro_rules! tuple_choice_parser {
-    ($head: ident) => {
-    };
-    ($head: ident $($id: ident)+) => {
-        tuple_choice_parser_inner!($head $($id)+);
-        tuple_choice_parser!($($id)+);
-    };
-}
-
 macro_rules! tuple_choice_parser_inner {
     ($($id: ident)+) => {
         #[allow(non_snake_case)]
@@ -478,6 +469,16 @@ macro_rules! tuple_choice_parser_inner {
     }
 }
 
+macro_rules! tuple_choice_parser {
+    ($head: ident) => {
+    };
+    ($head: ident $($id: ident)+) => {
+        tuple_choice_parser_inner!($head $($id)+);
+        tuple_choice_parser!($($id)+);
+    };
+}
+
+tuple_choice_parser!(A B C D E F G H I J K L M N O P Q R S T U V X Y Z);
 
 macro_rules! array_choice_parser {
     ($($t: tt)+) => {
