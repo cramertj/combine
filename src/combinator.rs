@@ -446,6 +446,15 @@ where
     }
 }
 
+macro_rules! tuple_choice_parser {
+    ($head: ident) => {
+    };
+    ($head: ident $($id: ident)+) => {
+        tuple_choice_parser_inner!($head $($id)+);
+        tuple_choice_parser!($($id)+);
+    };
+}
+
 macro_rules! tuple_choice_parser_inner {
     ($($id: ident)+) => {
         #[allow(non_snake_case)]
@@ -458,24 +467,13 @@ macro_rules! tuple_choice_parser_inner {
             type Output = Output;
             #[inline]
             fn parse_choice(&mut self, input: Self::Input) -> ConsumedResult<Self::Output, Self::Input> {
-                let ($(ref mut $id),+) = *self;
-                choice!($($id),+).parse_lazy(input)
+                unreachable!()
             }
             fn add_error_choice(&mut self, error: &mut StreamError<Self::Input>) {
-                let ($(ref mut $id),+) = *self;
-                choice!($($id),+).add_error(error)
+                unreachable!()
             }
         }
     }
-}
-
-macro_rules! tuple_choice_parser {
-    ($head: ident) => {
-    };
-    ($head: ident $($id: ident)+) => {
-        tuple_choice_parser_inner!($head $($id)+);
-        tuple_choice_parser!($($id)+);
-    };
 }
 
 tuple_choice_parser!(A B C D E F G H I J K L M N O P Q R S T U V X Y Z);
