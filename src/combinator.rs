@@ -467,16 +467,18 @@ macro_rules! tuple_choice_parser_inner {
             type Output = Output;
             #[inline]
             fn parse_choice(&mut self, input: Self::Input) -> ConsumedResult<Self::Output, Self::Input> {
-                unreachable!()
+                let ($(ref mut $id),+) = *self;
+                choice!($($id),+).parse_lazy(input)
             }
             fn add_error_choice(&mut self, error: &mut StreamError<Self::Input>) {
-                unreachable!()
+                let ($(ref mut $id),+) = *self;
+                choice!($($id),+).add_error(error)
             }
         }
     }
 }
 
-tuple_choice_parser!(A B C D E F G H I J K L M N O P Q R S T U V X Y Z);
+tuple_choice_parser!(A B C D E F G H I J K L);
 
 macro_rules! array_choice_parser {
     ($($t: tt)+) => {
