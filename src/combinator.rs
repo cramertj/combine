@@ -2308,12 +2308,6 @@ mod tests {
     use char::{char, digit, letter};
 
     #[test]
-    fn choice_empty() {
-        let mut parser = choice::<&mut [Token<&str>]>(&mut []);
-        let result_err = parser.parse("a");
-        assert!(result_err.is_err());
-    }
-    #[test]
     fn sep_by_consumed_error() {
         let mut parser2 = sep_by((letter(), letter()), token(','));
         let result_err: Result<(Vec<(char, char)>, &str), ParseError<_, char, &str>> =
